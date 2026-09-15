@@ -4,7 +4,8 @@ import { Buffer } from 'node:buffer';
 import bs58 from 'npm:bs58@6.0.0';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
-import { createV1, findMasterEditionPda, mintV1, mplTokenMetadata, printV1, TokenStandard } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
+import { createV1, findMasterEditionPda, mintV1, mplTokenMetadata, printV1, TokenStandard, transferV1 } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
+import { findAssociatedTokenPda } from 'npm:@metaplex-foundation/mpl-toolbox@0.9.4';
 import { findAssociatedInscriptionPda, findInscriptionMetadataPda, findMintInscriptionPda, initializeAssociatedInscription, initializeFromMint, mplInscription, writeData } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
 
 const maxImageBytes = 1024 * 1024;
@@ -48,6 +49,11 @@ async function accountDataLength(rpcUrl, address) {
   const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
   if (!result?.value?.data?.[0]) return 0;
   return Buffer.from(result.value.data[0], 'base64').length;
+}
+
+async function tokenBalance(rpcUrl, tokenAccount) {
+  const result = await rpcRequest(rpcUrl, 'getAccountInfo', [tokenAccount, { commitment: 'confirmed', encoding: 'jsonParsed' }]);
+  return result?.value?.data?.parsed?.info?.tokenAmount?.amount === '1';
 }
 
 async function tokenHasSupply(rpcUrl, mint) {
@@ -160,6 +166,21 @@ export default async function(req: Request): Promise<Response> {
       }
       if (editionState.supply !== 1n) throw new Error('Master Edition print supply did not finalize at 1. Resume this mint; do not create another.');
       return Response.json({ editionMint: editionSigner.publicKey.toString(), maxSupply: '1', supply: '1' });
+    }
+
+    if (input.action === 'transfer') {
+      const mint = String(input.mint || '').trim();
+      const destination = String(input.destination || '').trim();
+      if (!mintPattern.test(mint) || !mintPattern.test(destination)) return Response.json({ error: 'Invalid mint or destination address.' }, { status: 400 });
+      const mintKey = publicKey(mint);
+      const destinationKey = publicKey(destination);
+      const destinationToken = findAssociatedTokenPda(umi, { mint: mintKey, owner: destinationKey });
+      const delivered = () => tokenBalance(rpcUrl, destinationToken[0].toString());
+      if (!await delivered()) {
+        await sendWithFreshBlockhash(transferV1(umi, { mint: mintKey, authority: umi.identity, tokenOwner: umi.identity.publicKey, destinationOwner: destinationKey, tokenStandard: TokenStandard.NonFungible }), umi, delivered);
+      }
+      if (!await delivered()) throw new Error('The transfer did not confirm.');
+      return Response.json({ mint, destination, destinationToken: destinationToken[0].toString() });
     }
 
     if (input.action === 'append') {
