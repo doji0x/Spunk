@@ -124,15 +124,6 @@ export default async function(req: Request): Promise<Response> {
       if (!await tokenHasSupply(rpcUrl, mintAddress)) {
         await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
       }
-      const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
-      let editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
-      if (!editionState || editionState.maxSupply !== 1n) throw new Error('This mint does not have Master Edition maxSupply 1 and cannot be changed after creation.');
-      const editionSigner = await deterministicEditionSigner(umi, mintAddress, walletBytes);
-      if (editionState.supply === 0n) {
-        await sendWithFreshBlockhash(printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity.publicKey, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible }), umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
-        editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
-      }
-      if (editionState?.supply !== 1n) throw new Error('Master Edition print supply did not finalize at 1. Resume this mint; do not create another.');
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
       }
@@ -143,7 +134,25 @@ export default async function(req: Request): Promise<Response> {
           .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
         await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       }
-      return Response.json({ mint: mintAddress, editionMint: editionSigner.publicKey.toString(), owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true, maxSupply: '1', supply: '1' });
+      const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
+      const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
+      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
+    }
+
+    if (input.action === 'finalize') {
+      const mint = String(input.mint || '').trim();
+      if (!mintPattern.test(mint) || !await accountExists(rpcUrl, mint)) return Response.json({ error: 'The mint account was not found.' }, { status: 400 });
+      const mintKey = publicKey(mint);
+      const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
+      let editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
+      if (!editionState || editionState.maxSupply !== 1n) return Response.json({ error: 'The image is embedded, but this existing mint cannot be changed to Master Edition maxSupply 1.' }, { status: 409 });
+      const editionSigner = await deterministicEditionSigner(umi, mint, walletBytes);
+      if (editionState.supply === 0n) {
+        await sendWithFreshBlockhash(printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity.publicKey, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible }), umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
+        editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
+      }
+      if (editionState.supply !== 1n) throw new Error('Master Edition print supply did not finalize at 1. Resume this mint; do not create another.');
+      return Response.json({ editionMint: editionSigner.publicKey.toString(), maxSupply: '1', supply: '1' });
     }
 
     if (input.action === 'append') {
