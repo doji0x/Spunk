@@ -18,7 +18,10 @@ export default function useInscribedMint() {
       pending = { ...pending, offset };
       setState(current => ({ ...current, pending, progress: Math.round(offset / pending.bytes.length * 100) }));
     }
-    setState({ busy: false, progress: 100, error: '', pending: null, result: { mint: pending.mint, owner: pending.owner, gatewayUrl: pending.gatewayUrl } });
+    const { data: verification } = await base44.functions.invoke('validateInscription', { address: pending.mint });
+    const proof = verification.checks?.metaplex;
+    if (proof?.status !== 'valid') throw new Error('The bytes were written, but the on-chain image proof is not readable yet. Resume to verify again.');
+    setState({ busy: false, progress: 100, error: '', pending: null, result: { mint: pending.mint, owner: pending.owner, hash: proof.hash } });
   };
   const start = async values => {
     setState({ busy: true, progress: 0, error: '', result: null, pending: null });
