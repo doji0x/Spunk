@@ -5,7 +5,7 @@ import { Image } from '@/components/ui/image';
 export default function StandardCheck({ title, check, kind }) {
   const valid = check?.status === 'valid';
   const unknown = check?.status === 'unknown';
-  const link = kind === 'v1' ? `https://solscan.io/tx/${check?.signature}` : `https://solscan.io/account/${check?.imageAccount}`;
+  const link = kind === 'v1' ? `https://solscan.io/tx/${check?.signature}` : `https://solscan.io/account/${kind === 'libreplex' ? check?.inscriptionAccount : check?.imageAccount}`;
   return <article className="border-t border-[#e5e8e0]">
     <div className="flex items-start gap-3 p-5">
       <span className={valid ? 'rounded-full bg-[#c2f486] p-1.5' : unknown ? 'rounded-full bg-[#f1ecd7] p-1.5 text-[#887330]' : 'rounded-full bg-[#f3f4ef] p-1.5 text-[#8b9185]'}>{valid ? <Check size={16} /> : unknown ? <CircleHelp size={16} /> : <X size={16} />}</span>
