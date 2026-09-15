@@ -32,11 +32,35 @@ async function assertMainnet(rpcUrl) {
   if (payload.result !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
 }
 
-async function sendWithFreshBlockhash(builder, umi) {
+async function rpcRequest(rpcUrl, method, params) {
+  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+  const payload = await response.json();
+  if (payload.error) throw new Error(payload.error.message || 'Solana RPC request failed.');
+  return payload.result;
+}
+
+async function accountExists(rpcUrl, address) {
+  const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
+  return Boolean(result?.value);
+}
+
+async function tokenHasSupply(rpcUrl, mint) {
+  const result = await rpcRequest(rpcUrl, 'getTokenSupply', [mint, { commitment: 'confirmed' }]);
+  return result?.value?.amount === '1';
+}
+
+async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await builder.sendAndConfirm(umi, { send: { maxRetries: 5 }, confirm: { commitment: 'confirmed' } });
     } catch (error) {
+      if (isApplied) {
+        try {
+          if (await isApplied()) return;
+        } catch {
+          // Preserve the transaction error when the state check is temporarily unavailable.
+        }
+      }
       const message = error instanceof Error ? error.message : String(error);
       const expired = /block height exceeded|signature .* expired/i.test(message);
       if (!expired || attempt === 2) throw error;
@@ -70,14 +94,14 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible }), umi);
-      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi);
+      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible }), umi, () => accountExists(rpcUrl, mint.publicKey.toString()));
+      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mint.publicKey.toString()));
       const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
       const builder = new TransactionBuilder()
         .add(initializeFromMint(umi, { mintAccount: mint.publicKey }))
         .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
         .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
-      await sendWithFreshBlockhash(builder, umi);
+      await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       return Response.json({ mint: mint.publicKey.toString(), owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri });
     }
 
