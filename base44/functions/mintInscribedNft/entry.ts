@@ -49,6 +49,16 @@ async function tokenHasSupply(rpcUrl, mint) {
   return result?.value?.amount === '1';
 }
 
+async function validateExistingMint(rpcUrl, address, expectedAuthority) {
+  const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'jsonParsed' }]);
+  const account = result?.value;
+  const parsed = account?.data?.parsed;
+  if (!account || parsed?.type !== 'mint') return 'The existing fungible token mint was not found.';
+  if (account.owner !== 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') return 'Only standard SPL fungible token mints are supported.';
+  if (parsed.info?.mintAuthority !== expectedAuthority) return 'The server wallet is not the mint authority for this token.';
+  return null;
+}
+
 async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -93,7 +103,9 @@ export default async function(req: Request): Promise<Response> {
       let mintKey;
       if (input.mint) {
         const existingMint = String(input.mint).trim();
-        if (!mintPattern.test(existingMint) || !await accountExists(rpcUrl, existingMint)) return Response.json({ error: 'The existing mint account was not found.' }, { status: 400 });
+        if (!mintPattern.test(existingMint)) return Response.json({ error: 'Enter a valid existing fungible token mint address.' }, { status: 400 });
+        const mintError = await validateExistingMint(rpcUrl, existingMint, umi.identity.publicKey.toString());
+        if (mintError) return Response.json({ error: mintError }, { status: 400 });
         mintKey = publicKey(existingMint);
       } else {
         mintSigner = generateSigner(umi);
@@ -106,9 +118,9 @@ export default async function(req: Request): Promise<Response> {
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
       if (mintSigner) {
         await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Zero' } }), umi, () => accountExists(rpcUrl, mintAddress));
-      }
-      if (!await tokenHasSupply(rpcUrl, mintAddress)) {
-        await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
+        if (!await tokenHasSupply(rpcUrl, mintAddress)) {
+          await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
+        }
       }
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
