@@ -9,6 +9,10 @@ import ScrollToTop from './components/ScrollToTop';
 // Add page imports here
 import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
+import Launchpad from '@/pages/Launchpad';
+import LaunchNew from '@/pages/LaunchNew';
+import LaunchDetail from '@/pages/LaunchDetail';
+import LaunchPublic from '@/pages/LaunchPublic';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -46,8 +50,14 @@ const AuthenticatedApp = () => {
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/launch/:id" element={<LaunchPublic />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fmint" replace />} />}>
         <Route path="/admin/mint" element={<AdminMint />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Flaunchpad" replace />} />}>
+        <Route path="/admin/launchpad" element={<Launchpad />} />
+        <Route path="/admin/launchpad/new" element={<LaunchNew />} />
+        <Route path="/admin/launchpad/:id" element={<LaunchDetail />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

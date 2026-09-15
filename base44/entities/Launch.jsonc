@@ -1,0 +1,88 @@
+{
+  "name": "Launch",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "decimals": {
+      "type": "integer",
+      "default": 6
+    },
+    "supply": {
+      "type": "integer",
+      "description": "Total supply in whole tokens"
+    },
+    "priceLamports": {
+      "type": "integer",
+      "description": "Fixed sale price per whole token, in lamports"
+    },
+    "imageMime": {
+      "type": "string"
+    },
+    "imageSize": {
+      "type": "integer"
+    },
+    "imageHash": {
+      "type": "string",
+      "description": "SHA-256 hex of the uploaded image bytes"
+    },
+    "tokenMint": {
+      "type": "string"
+    },
+    "nftMint": {
+      "type": "string"
+    },
+    "inscriptionAccount": {
+      "type": "string"
+    },
+    "imageAccount": {
+      "type": "string"
+    },
+    "vaultAddress": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "preparing",
+        "inscribed",
+        "launched",
+        "on_sale",
+        "closed"
+      ],
+      "default": "preparing"
+    },
+    "launchStep": {
+      "type": "string"
+    },
+    "soldTokens": {
+      "type": "integer",
+      "default": 0
+    },
+    "proceedsLamports": {
+      "type": "integer",
+      "default": 0
+    },
+    "withdrawnLamports": {
+      "type": "integer",
+      "default": 0
+    }
+  },
+  "required": [
+    "name",
+    "symbol",
+    "description",
+    "supply",
+    "priceLamports",
+    "imageMime",
+    "imageSize",
+    "imageHash"
+  ]
+}
