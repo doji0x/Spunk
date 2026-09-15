@@ -12,7 +12,7 @@ export default async function(req: Request): Promise<Response> {
     const input = await req.json();
     const launches = base44.asServiceRole.entities.Launch;
     const purchases = base44.asServiceRole.entities.Purchase;
-    const launch = await launches.get(String(input.launchId || ''));
+    const launch = await launches.get(String(input.launchId || '')).catch(() => null);
     if (!launch || !launch.tokenMint) return Response.json({ error: 'Launch not found.' }, { status: 404 });
 
     if (input.action === 'quote') return Response.json(publicView(launch));

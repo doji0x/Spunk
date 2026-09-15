@@ -63,7 +63,7 @@ export default async function(req: Request): Promise<Response> {
       return Response.json(launch);
     }
 
-    const launch = await launches.get(String(input.launchId || ''));
+    const launch = await launches.get(String(input.launchId || '')).catch(() => null);
     if (!launch) return Response.json({ error: 'Launch not found.' }, { status: 404 });
     const keys = await launchKeypairs(walletBytes, launch.id);
     if (keys.tokenMint.publicKey.toBase58() !== launch.tokenMint) return Response.json({ error: 'This launch was created with a different server wallet.' }, { status: 409 });
