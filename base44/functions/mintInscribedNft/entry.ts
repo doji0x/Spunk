@@ -94,8 +94,8 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible }), umi, () => accountExists(rpcUrl, mint.publicKey.toString()));
-      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mint.publicKey.toString()));
+      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Zero' } }), umi, () => accountExists(rpcUrl, mint.publicKey.toString()));
+      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mint.publicKey.toString()));
       const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
       const builder = new TransactionBuilder()
         .add(initializeFromMint(umi, { mintAccount: mint.publicKey }))
