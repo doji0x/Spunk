@@ -16,8 +16,8 @@ export default function Home() {
     try {
       const { data } = await base44.functions.invoke('validateInscription', { address });
       if (data.status === 'valid') {
-        const image = new window.Image(); image.src = data.image;
-        try { await image.decode(); } catch { setResult({ status: 'unknown', message: 'The inscription exists, but its image bytes could not be decoded. It may be incomplete or corrupted.' }); return; }
+        const images = Object.values(data.checks || {}).filter(check => check?.status === 'valid').map(check => check.image);
+        try { await Promise.all(images.map(src => { const image = new window.Image(); image.src = src; return image.decode(); })); } catch { setResult({ ...data, status: 'unknown', message: 'An inscription exists, but its image bytes could not be decoded. It may be incomplete or corrupted.' }); return; }
       }
       setResult(data);
     } catch { setResult({ status: 'unknown', message: 'The verification service is unavailable. Please try again shortly.' }); }
@@ -33,7 +33,7 @@ export default function Home() {
       <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[9px] text-[#939d85]"><span className="flex items-center gap-1.5"><Check size={11} />ACTUAL IMAGE BYTES</span><span className="flex items-center gap-1.5"><Check size={11} />NO OFF-CHAIN SHORTCUTS</span></div>
       <ValidationExplainer />
     </main>
-    <footer className="mx-5 flex flex-col items-center justify-between gap-4 border-t border-[#dce1d5] py-6 text-[10px] text-[#929989] sm:mx-10 sm:flex-row lg:mx-16"><span className="flex items-center gap-2"><span className="font-semibold text-[#657456]">validate.</span> Less trust. More truth.</span><button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-[#52683f]">Metaplex inscriptions · Mainnet only <ArrowUpRight size={12} /></button><span className="font-mono text-[9px] tracking-wider">BUILT ON <span className="ml-1 font-semibold text-[#4e5b42]">SOLANA</span></span></footer>
+    <footer className="mx-5 flex flex-col items-center justify-between gap-4 border-t border-[#dce1d5] py-6 text-[10px] text-[#929989] sm:mx-10 sm:flex-row lg:mx-16"><span className="flex items-center gap-2"><span className="font-semibold text-[#657456]">validate.</span> Less trust. More truth.</span><button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-[#52683f]">Metaplex + Solana v1 · Mainnet only <ArrowUpRight size={12} /></button><span className="font-mono text-[9px] tracking-wider">BUILT ON <span className="ml-1 font-semibold text-[#4e5b42]">SOLANA</span></span></footer>
     <ValidationAbout open={about} onOpenChange={setAbout} />
   </div>;
 }

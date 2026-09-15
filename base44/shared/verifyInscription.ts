@@ -11,7 +11,7 @@ export async function verifyInscription(address) {
     let candidates = [address];
     let transaction = null;
     if (address.length > 44) {
-      transaction = await solanaRpc('getTransaction', [address, { encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0 }]);
+      transaction = await solanaRpc('getTransaction', [address, { encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 1 }]);
       if (!transaction) return { status: 'unknown', message: 'Transaction not found on Solana mainnet. It may be unfinalized or unavailable from this node.' };
       if (transaction.meta?.err) return { status: 'invalid', reason: 'This transaction failed and did not commit an inscription.' };
       candidates = [...new Set(transaction.transaction.message.accountKeys.map(k => typeof k === 'string' ? k : k.pubkey))];

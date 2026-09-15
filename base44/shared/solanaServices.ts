@@ -32,18 +32,28 @@ export async function heliusRpc(method, params) {
   return request(url.toString(), method, params, 'Helius');
 }
 
-export async function inscriptionHistoryAccounts(metadataKey) {
+async function heliusAddressTransactions(address, limit, sortOrder) {
   const key = secrets.get('INSCRIPTION_API_KEY');
   if (!key) throw new Error('The Helius API key is not configured.');
-  const url = new URL(`https://api.helius.xyz/v0/addresses/${metadataKey}/transactions`);
+  const url = new URL(`https://api.helius.xyz/v0/addresses/${address}/transactions`);
   url.searchParams.set('api-key', key);
-  url.searchParams.set('limit', '3');
-  url.searchParams.set('sort-order', 'asc');
+  url.searchParams.set('limit', String(limit));
+  url.searchParams.set('sort-order', sortOrder);
   let response;
-  try { response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(18000) }); } catch { throw new Error('Helius inscription history could not be reached.'); }
-  if (!response.ok) throw new Error(`Helius inscription history is unavailable (HTTP ${response.status}).`);
+  try { response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(18000) }); } catch { throw new Error('Helius address history could not be reached.'); }
+  if (!response.ok) throw new Error(`Helius address history is unavailable (HTTP ${response.status}).`);
   const transactions = await response.json();
-  if (!Array.isArray(transactions)) throw new Error('Helius inscription history returned an unexpected response.');
+  if (!Array.isArray(transactions)) throw new Error('Helius address history returned an unexpected response.');
+  return transactions;
+}
+
+export async function recentAddressSignatures(address, limit = 20) {
+  const transactions = await heliusAddressTransactions(address, Math.min(limit, 20), 'desc');
+  return [...new Set(transactions.map(tx => tx.signature))].filter(signature => typeof signature === 'string' && /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature));
+}
+
+export async function inscriptionHistoryAccounts(metadataKey) {
+  const transactions = await heliusAddressTransactions(metadataKey, 3, 'asc');
   return [...new Set(transactions.flatMap(tx => (tx.accountData || []).map(a => a.account)))].filter(a => typeof a === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)).slice(0, 100);
 }
 
