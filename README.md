@@ -1,8 +1,10 @@
 # Validate
 
-> **Less trust. More truth.** Verify whether image bytes are actually embedded on Solana—not merely referenced by token metadata.
+> **Less trust. More truth.** Inscribe images on Solana with Metaplex on transaction version 1—and prove the bytes are really there.
 
-Validate is a mainnet Solana inscription verifier. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
+**Flagship: inscribing on V1 with Metaplex.** Validate's primary product is a permanent, wallet-based inscription pipeline: upload an image, write its bytes on-chain in ordered version 1 transactions through the Metaplex inscription program, and finalize a single-supply NFT whose image lives entirely in Solana account data. No gateways, no IPFS, no hosted URLs. Every inscription is hash-verified against the uploaded file before it is called done. See [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex).
+
+Verification is the proof layer beneath it. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
 
 - **Metaplex inscriptions** (`mpl-inscription`)
 - **LibrePlex inscriptions**, including `InscriptionV3`
@@ -13,11 +15,11 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 
 ## Table of Contents
 
+- [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex)
 - [Purpose](#purpose)
 - [Features](#features)
 - [Supported Standards](#supported-standards)
 - [Fungible Token Verification](#fungible-token-verification)
-- [Coming Soon: User Inscribing](#coming-soon-user-inscribing)
 - [How Verification Works](#how-verification-works)
 - [Result Semantics](#result-semantics)
 - [Architecture](#architecture)
@@ -44,6 +46,10 @@ The application deliberately distinguishes fungible token metadata from NFT-styl
 
 ## Features
 
+- Inscribes images on-chain with Metaplex across ordered version 1 transactions
+- Writes image bytes in resumable chunks, so an interrupted inscription continues on the same mint
+- Confirms every inscription by reading the bytes back from chain and matching the SHA-256 digest
+- Finalizes a single-supply Master Edition, and can bind an inscription permanently to a fungible token
 - Accepts Solana mint addresses and transaction signatures
 - Always runs Metaplex, LibrePlex, versioned-transaction, and token-held checks
 - Verifies fungible tokens by inspecting inscribed NFTs held by the token's own mint address
@@ -108,9 +114,9 @@ Submitting the fungible token's contract address returns:
 
 This verifies image bytes and their permanent linkage only. It does not verify the token's team, liquidity, distribution, or safety.
 
-## Coming Soon: User Inscribing
+## Flagship: Inscribing on V1 with Metaplex
 
-Inscribing images with Metaplex on transaction version 1 is planned for public use. Today the minting console is restricted to administrators. The intended user workflow is:
+Inscribing an image with Metaplex on transaction version 1 is Validate's flagship capability. The pipeline is live today in an administrator-only console and is **coming soon for all users** with wallet-based signing. The user workflow is:
 
 1. **Connect a wallet** — the user connects a Solana wallet instead of relying on a server-side signer.
 2. **Upload an image** — PNG, JPEG, GIF, or WebP up to the supported size limit, validated by byte signature and browser decode before any transaction is created.
