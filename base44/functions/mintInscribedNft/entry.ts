@@ -105,7 +105,7 @@ export default async function(req: Request): Promise<Response> {
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
       if (mintSigner) {
-        await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Zero' } }), umi, () => accountExists(rpcUrl, mintAddress));
+        await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Limited', fields: [1n] } }), umi, () => accountExists(rpcUrl, mintAddress));
       }
       if (!await tokenHasSupply(rpcUrl, mintAddress)) {
         await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
