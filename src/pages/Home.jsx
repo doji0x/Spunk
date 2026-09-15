@@ -6,6 +6,7 @@ import ValidationForm from '@/components/ValidationForm';
 import ValidationResult from '@/components/ValidationResult';
 import ValidationExplainer from '@/components/ValidationExplainer';
 import ValidationAbout from '@/components/ValidationAbout';
+import InscriptionExamples from '@/components/InscriptionExamples';
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -28,7 +29,7 @@ export default function Home() {
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#dce3d1] bg-[#edf2e6] px-3 py-1.5 font-mono text-[9px] tracking-[0.12em] text-[#6a7e56]"><span className="h-1 w-1 rounded-full bg-[#698d45]" />DON’T TRUST. VERIFY.</div>
       <h1 className="text-[52px] font-medium leading-[1.04] tracking-[-3px] sm:text-[76px] sm:tracking-[-4.5px]">Is it really<br /><span className="font-serif italic font-normal text-[#66834a]">on-chain?</span></h1>
       <p className="mx-auto mb-8 mt-6 max-w-[450px] text-[14px] leading-6 text-[#7e8773] sm:mb-9">Anyone can claim it. The chain can prove it.<br />Verify that a token’s image actually lives on Solana.</p>
-      <div className="mx-auto max-w-[570px]"><ValidationForm onValidate={validate} loading={loading} /><ValidationResult result={result} /></div>
+      <div className="mx-auto max-w-[570px]"><ValidationForm onValidate={validate} loading={loading} /><InscriptionExamples onValidate={validate} disabled={loading} /><ValidationResult result={result} /></div>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[9px] text-[#939d85]"><span className="flex items-center gap-1.5"><Check size={11} />ACTUAL IMAGE BYTES</span><span className="flex items-center gap-1.5"><Check size={11} />NO OFF-CHAIN SHORTCUTS</span></div>
       <ValidationExplainer />
     </main>
