@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import ImageUploadField from '@/components/admin/ImageUploadField';
 
 export default function MintForm({ onMint, busy }) {
   const [name, setName] = useState('');
@@ -21,7 +22,7 @@ export default function MintForm({ onMint, busy }) {
       <div className="space-y-2"><Label htmlFor="symbol">Ticker</Label><Input id="symbol" maxLength={10} value={symbol} onChange={event => setSymbol(event.target.value.toUpperCase())} required disabled={busy} /></div>
     </div>
     <div className="space-y-2"><Label htmlFor="mint">Recover existing mint <span className="font-normal text-[#7e8773]">(optional)</span></Label><Input id="mint" value={mint} onChange={event => setMint(event.target.value)} placeholder="Paste a partially completed mint address" disabled={busy} /><p className="text-xs text-[#7e8773]">Use this to finish a mint whose NFT exists but inscription did not complete.</p></div>
-    <div className="space-y-2"><Label htmlFor="image">Inscribed image</Label><Input id="image" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={event => setFile(event.target.files?.[0] || null)} required disabled={busy} /><p className="text-xs text-[#7e8773]">PNG, JPEG, GIF, or WebP · 1 MB maximum. Larger files require substantially more SOL and time.</p></div>
+    <ImageUploadField disabled={busy} onFileChange={setFile} />
     <div className="space-y-2"><Label htmlFor="details">Details</Label><Textarea id="details" maxLength={1000} rows={5} value={details} onChange={event => setDetails(event.target.value)} placeholder="Description and details stored in the NFT inscription" required disabled={busy} /></div>
     <Button type="submit" disabled={busy || !file} className="w-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Minting on mainnet…</> : 'Mint one inscribed NFT'}</Button>
   </form>;
