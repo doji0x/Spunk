@@ -2,11 +2,12 @@
 
 > **Less trust. More truth.** Verify whether image bytes are actually embedded on Solana—not merely referenced by token metadata.
 
-Validate is a mainnet Solana inscription verifier. Submit a token mint address or transaction signature and the application independently checks three supported inscription paths:
+Validate is a mainnet Solana inscription verifier. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
 
 - **Metaplex inscriptions** (`mpl-inscription`)
 - **LibrePlex inscriptions**, including `InscriptionV3`
 - **Images embedded in versioned Solana transactions**, including transaction version 1
+- **Inscriptions held by a token's own mint address**, which lets a fungible token carry a verifiable on-chain image
 
 When an image is found, Validate reads the bytes from finalized chain data, confirms that they form a complete supported image, calculates a SHA-256 digest, and presents the associated accounts and verification evidence.
 
@@ -15,6 +16,8 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 - [Purpose](#purpose)
 - [Features](#features)
 - [Supported Standards](#supported-standards)
+- [Fungible Token Verification](#fungible-token-verification)
+- [Coming Soon: User Inscribing](#coming-soon-user-inscribing)
 - [How Verification Works](#how-verification-works)
 - [Result Semantics](#result-semantics)
 - [Architecture](#architecture)
@@ -42,7 +45,8 @@ The application deliberately distinguishes fungible token metadata from NFT-styl
 ## Features
 
 - Accepts Solana mint addresses and transaction signatures
-- Always runs Metaplex, LibrePlex, and versioned-transaction checks
+- Always runs Metaplex, LibrePlex, versioned-transaction, and token-held checks
+- Verifies fungible tokens by inspecting inscribed NFTs held by the token's own mint address
 - Resolves canonical program-derived addresses and inscription relationships
 - Supports direct transaction inspection and mint-history scanning
 - Reads image bytes from finalized Solana accounts or transaction instructions
@@ -85,16 +89,52 @@ The transaction verifier requests transactions with `maxSupportedTransactionVers
 
 This check is always reported independently from the Metaplex and LibrePlex results.
 
+### Inscriptions Held By A Token Address
+
+The token-held verifier lists single-supply, zero-decimal token accounts owned by the submitted address, then runs full Metaplex inscription verification against each held mint. A valid result reports the held NFT mint alongside the usual image evidence.
+
+## Fungible Token Verification
+
+Fungible tokens cannot embed an image in their own mint account. Validate supports a permanent alternative: an inscribed NFT is transferred into a token account owned by the fungible token's mint address.
+
+Because no private key exists for a mint address, the inscribed NFT can never be moved again. The image therefore becomes an irreversible, on-chain property of that token.
+
+Submitting the fungible token's contract address returns:
+
+- the held inscribed NFT mint;
+- the inscription and image accounts;
+- the decoded image bytes, MIME type, and byte length; and
+- the SHA-256 digest of the exact verified bytes.
+
+This verifies image bytes and their permanent linkage only. It does not verify the token's team, liquidity, distribution, or safety.
+
+## Coming Soon: User Inscribing
+
+Inscribing images with Metaplex on transaction version 1 is planned for public use. Today the minting console is restricted to administrators. The intended user workflow is:
+
+1. **Connect a wallet** — the user connects a Solana wallet instead of relying on a server-side signer.
+2. **Upload an image** — PNG, JPEG, GIF, or WebP up to the supported size limit, validated by byte signature and browser decode before any transaction is created.
+3. **Enter token details** — name, ticker, and description stored in the inscription metadata.
+4. **Review the preflight estimate** — account rent, per-chunk transaction fees, and the total inscription cost are shown before signing.
+5. **Create the NFT** — a Metaplex NonFungible mint is created with print supply limited to 1.
+6. **Initialize the inscription** — the mint-derived inscription account, inscription metadata, and the associated `image` inscription account are created.
+7. **Write the image** — image bytes are written in ordered chunks across version 1 transactions, with resumable progress so an interrupted upload continues instead of restarting.
+8. **Verify on-chain** — the written bytes are read back from finalized chain data and hashed; the SHA-256 digest must match the uploaded file.
+9. **Finalize the edition** — the Master Edition is finalized at `maxSupply` 1 and `supply` 1.
+10. **Optionally bind to a fungible token** — the finalized inscribed NFT can be sent to a fungible token's mint address, making it permanently verifiable through the token-held check.
+
+Every step is idempotent and resumable by design: a stalled inscription is always resumed on the same mint rather than replaced by a new one.
+
 ## How Verification Works
 
 1. **Validate the input** — accept a Base58 Solana mint address or transaction signature.
-2. **Run independent checks** — execute Metaplex, LibrePlex, and versioned-transaction verification in parallel.
+2. **Run independent checks** — execute Metaplex, LibrePlex, versioned-transaction, and token-held verification in parallel.
 3. **Resolve candidate mints** — use the supplied mint directly or inspect transaction account keys for token mints.
 4. **Verify protocol linkage** — derive expected PDAs, decode account layouts, and confirm root or metadata relationships.
 5. **Read finalized bytes** — retrieve account data or transaction instruction bytes from Solana mainnet.
 6. **Detect a complete image** — validate PNG, JPEG, GIF, or WebP boundaries rather than trusting a filename or MIME label.
 7. **Calculate evidence** — compute the SHA-256 digest and assemble account, size, authority, and timestamp details.
-8. **Return every check** — preserve the outcome of all three standards even when one already produced a valid result.
+8. **Return every check** — preserve the outcome of all four checks even when one already produced a valid result.
 9. **Render the image** — the client decodes the returned image before displaying a successful overall result.
 
 ### Successful Verification Proves
@@ -134,7 +174,8 @@ React / Vite client
         │       │
         │       ├── Metaplex verifier ───── inscription metadata + image accounts
         │       ├── LibrePlex verifier ──── legacy/V3 inscription + data PDAs
-        │       └── v1 transaction parser ─ direct lookup or mint-history scan
+        │       ├── v1 transaction parser ─ direct lookup or mint-history scan
+        │       └── token-held verifier ─── inscribed NFTs owned by the mint address
         │
         └── findInscriptionExamples
                 │
@@ -174,7 +215,7 @@ src/
 │   └── Home.jsx                         # Main verification experience
 ├── components/
 │   ├── ValidationForm.jsx               # Address input and client validation
-│   ├── ValidationResult.jsx             # Combined three-standard result
+│   ├── ValidationResult.jsx             # Combined four-check result
 │   ├── StandardCheck.jsx                # Evidence card for one standard
 │   ├── InscriptionExamples.jsx          # Paginated verified examples
 │   ├── ValidationAbout.jsx              # Methodology and limitations
@@ -194,6 +235,7 @@ base44/
     ├── verifyInscription.ts              # Metaplex verification
     ├── verifyLibreplex.ts                # LibrePlex legacy/V3 verification
     ├── v1Transaction.ts                  # Versioned transaction image parser
+    ├── verifyHeldInscription.ts          # Inscriptions held by a token address
     ├── inscriptionMetadata.ts            # Metaplex PDA and metadata utilities
     └── solanaServices.ts                 # Solana and Helius service access
 ```
@@ -274,7 +316,8 @@ Representative response shape:
   "checks": {
     "metaplex": { "status": "invalid" },
     "v1": { "status": "invalid" },
-    "libreplex": { "status": "valid" }
+    "libreplex": { "status": "valid" },
+    "held": { "status": "invalid" }
   }
 }
 ```
@@ -354,7 +397,8 @@ Repository synchronization does not publish the application automatically. Until
 ## Scope and Limitations
 
 - Solana **mainnet only**
-- Metaplex, LibrePlex, and versioned-transaction image paths only
+- Metaplex, LibrePlex, versioned-transaction, and token-held image paths only
+- The token-held check inspects up to ten single-supply tokens owned by an address
 - PNG, JPEG, GIF, and WebP only
 - Account-based images are limited to 5 MB by the verifier
 - Mint-history detection is intentionally bounded and may not inspect every historical transaction
@@ -375,6 +419,10 @@ Review the individual standard cards. One provider or standard can be inconclusi
 
 The logo may come from off-chain token metadata or an indexer. Validate requires actual supported image bytes in a recognized inscription account or versioned transaction.
 
+### A fungible token holds an inscribed NFT but the check is invalid
+
+Confirm the inscribed NFT is held in a token account owned by the fungible token's mint address, that its balance is exactly 1 with zero decimals, and that the NFT itself verifies when submitted on its own.
+
 ### A known inscription is not found from its mint
 
 Try the original inscription transaction signature. Very old relationships may depend on historical index data, and mint-history scanning is intentionally bounded.
@@ -385,7 +433,7 @@ Discovery is paginated and only returns candidates that pass full verification. 
 
 ### Local frontend works but verification does not
 
-Run the app through `base44 dev`, confirm the project is linked to the correct Base44 app, and verify that all three required secrets are configured server-side.
+Run the app through `base44 dev`, confirm the project is linked to the correct Base44 app, and verify that all required secrets are configured server-side.
 
 ## Reference Documentation
 
