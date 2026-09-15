@@ -131,7 +131,7 @@ export default async function(req: Request): Promise<Response> {
         const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
         const builder = new TransactionBuilder()
           .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
-          .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
+          .add(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
         await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       }
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
