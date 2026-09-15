@@ -52,7 +52,7 @@ async function tokenHasSupply(rpcUrl, mint) {
 async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await builder.sendAndConfirm(umi, { send: { maxRetries: 5 }, confirm: { commitment: 'confirmed' } });
+      return await builder.sendAndConfirm(umi, { send: { maxRetries: 0 }, confirm: { commitment: 'confirmed' } });
     } catch (error) {
       if (isApplied) {
         try {
@@ -89,20 +89,38 @@ export default async function(req: Request): Promise<Response> {
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The image must be 1 MB or smaller.' }, { status: 400 });
       if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, or WebP image.' }, { status: 400 });
-      const mint = generateSigner(umi);
-      const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mint.publicKey });
+      let mintSigner = null;
+      let mintKey;
+      if (input.mint) {
+        const existingMint = String(input.mint).trim();
+        if (!mintPattern.test(existingMint) || !await accountExists(rpcUrl, existingMint)) return Response.json({ error: 'The existing mint account was not found.' }, { status: 400 });
+        mintKey = publicKey(existingMint);
+      } else {
+        mintSigner = generateSigner(umi);
+        mintKey = mintSigner.publicKey;
+      }
+      const mintAddress = mintKey.toString();
+      const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Zero' } }), umi, () => accountExists(rpcUrl, mint.publicKey.toString()));
-      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mint.publicKey.toString()));
-      const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
-      const builder = new TransactionBuilder()
-        .add(initializeFromMint(umi, { mintAccount: mint.publicKey }))
-        .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
-        .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
-      await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
-      return Response.json({ mint: mint.publicKey.toString(), owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri });
+      if (mintSigner) {
+        await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Zero' } }), umi, () => accountExists(rpcUrl, mintAddress));
+      }
+      if (!await tokenHasSupply(rpcUrl, mintAddress)) {
+        await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
+      }
+      if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
+        await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
+      }
+      if (!await accountExists(rpcUrl, associatedInscriptionAccount[0].toString())) {
+        const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
+        const builder = new TransactionBuilder()
+          .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
+          .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
+        await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
+      }
+      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true });
     }
 
     if (input.action === 'append') {
