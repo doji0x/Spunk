@@ -32,6 +32,18 @@ async function assertMainnet(rpcUrl) {
   if (payload.result !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
 }
 
+async function sendWithFreshBlockhash(builder, umi) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await builder.sendAndConfirm(umi, { send: { maxRetries: 5 }, confirm: { commitment: 'confirmed' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const expired = /block height exceeded|signature .* expired/i.test(message);
+      if (!expired || attempt === 2) throw error;
+    }
+  }
+}
+
 export default async function(req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
@@ -58,14 +70,14 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      await createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible }).sendAndConfirm(umi);
-      await mintV1(umi, { mint: mint.publicKey, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }).sendAndConfirm(umi);
+      await sendWithFreshBlockhash(createV1(umi, { mint, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible }), umi);
+      await sendWithFreshBlockhash(mintV1(umi, { mint: mint.publicKey, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi);
       const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
       const builder = new TransactionBuilder()
         .add(initializeFromMint(umi, { mintAccount: mint.publicKey }))
         .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
         .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
-      await builder.sendAndConfirm(umi, { confirm: { commitment: 'finalized' } });
+      await sendWithFreshBlockhash(builder, umi);
       return Response.json({ mint: mint.publicKey.toString(), owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri });
     }
 
@@ -83,7 +95,7 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       for (let index = 0; index < bytes.length; index += writeChunkBytes) {
-        await writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value: bytes.subarray(index, index + writeChunkBytes), associatedTag: 'image', offset: offset + index }).sendAndConfirm(umi, { confirm: { commitment: 'finalized' } });
+        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value: bytes.subarray(index, index + writeChunkBytes), associatedTag: 'image', offset: offset + index }), umi);
       }
       return Response.json({ nextOffset: offset + bytes.length, complete: offset + bytes.length === totalSize });
     }
