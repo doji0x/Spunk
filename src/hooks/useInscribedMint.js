@@ -45,7 +45,8 @@ export default function useInscribedMint() {
   const prepare = async pending => {
     if (pending.prepared) return pending;
     const { data } = await base44.functions.invoke('mintInscribedNft', { action: 'start', mint: pending.mint || undefined, name: pending.name, symbol: pending.symbol, details: pending.details, mimeType: pending.mimeType, totalSize: pending.bytes.length });
-    const prepared = { ...pending, ...data };
+    const resumeOffset = Math.min(Math.floor((data.writtenBytes || 0) / data.batchBytes) * data.batchBytes, pending.bytes.length);
+    const prepared = { ...pending, ...data, offset: Math.max(pending.offset, resumeOffset) };
     setState(current => ({ ...current, pending: prepared, progress: 1 }));
     return prepared;
   };

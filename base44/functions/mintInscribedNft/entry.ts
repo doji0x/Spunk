@@ -9,7 +9,7 @@ import { findAssociatedInscriptionPda, findInscriptionMetadataPda, findMintInscr
 
 const maxImageBytes = 1024 * 1024;
 const writeChunkBytes = 800;
-const batchBytes = writeChunkBytes * 8;
+const batchBytes = writeChunkBytes;
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function parseWallet(value) {
@@ -42,6 +42,12 @@ async function rpcRequest(rpcUrl, method, params) {
 async function accountExists(rpcUrl, address) {
   const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
   return Boolean(result?.value);
+}
+
+async function accountDataLength(rpcUrl, address) {
+  const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
+  if (!result?.value?.data?.[0]) return 0;
+  return Buffer.from(result.value.data[0], 'base64').length;
 }
 
 async function tokenHasSupply(rpcUrl, mint) {
@@ -136,7 +142,8 @@ export default async function(req: Request): Promise<Response> {
       }
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
       const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
-      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
+      const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
+      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
     }
 
     if (input.action === 'finalize') {
@@ -168,10 +175,13 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
-      for (let index = 0; index < bytes.length; index += writeChunkBytes) {
-        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value: bytes.subarray(index, index + writeChunkBytes), associatedTag: 'image', offset: offset + index }), umi);
+      const imageAddress = associatedInscriptionAccount[0].toString();
+      const value = new Uint8Array(bytes.subarray(0, writeChunkBytes));
+      const writtenEnd = offset + value.length;
+      if (await accountDataLength(rpcUrl, imageAddress) < writtenEnd) {
+        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value, associatedTag: 'image', offset }), umi, async () => await accountDataLength(rpcUrl, imageAddress) >= writtenEnd);
       }
-      return Response.json({ nextOffset: offset + bytes.length, complete: offset + bytes.length === totalSize });
+      return Response.json({ nextOffset: writtenEnd, complete: writtenEnd === totalSize });
     }
     return Response.json({ error: 'Invalid mint action.' }, { status: 400 });
   } catch (error) {
