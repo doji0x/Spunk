@@ -131,6 +131,97 @@ Inscribing an image with Metaplex on transaction version 1 is Validate's flagshi
 
 Every step is idempotent and resumable by design: a stalled inscription is always resumed on the same mint rather than replaced by a new one.
 
+### Detailed Workflow
+
+#### 0. Preconditions
+
+- The RPC endpoint's genesis hash is checked against mainnet (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`) before any transaction is built. Any other cluster aborts the run.
+- The caller must be authenticated and hold the `admin` role while the console remains administrator-only.
+- The signer is loaded server-side today (64-byte secret key); in the public release the connected wallet becomes the signer and fee payer.
+
+#### 1. Image validation
+
+| Rule | Enforcement |
+| --- | --- |
+| Size | 1 MB maximum |
+| Type | `image/png`, `image/jpeg`, `image/gif`, `image/webp` |
+| Byte signature | PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`, GIF `GIF87a`/`GIF89a`, WebP `RIFF`…`WEBP` |
+| Decodability | The browser must fully decode the file into an image before minting is allowed |
+
+The declared MIME type and the actual leading bytes must agree. A mismatch is rejected in the browser and again on the first server-side write.
+
+#### 2. Address derivation
+
+Every account is program-derived, so the same input always resolves to the same addresses and a resumed run cannot drift:
+
+```text
+mint                         → new keypair, or an existing mint being resumed
+inscriptionAccount           → findMintInscriptionPda(mint)
+inscriptionMetadataAccount   → findInscriptionMetadataPda(inscriptionAccount)
+associatedInscriptionAccount → findAssociatedInscriptionPda(inscriptionMetadataAccount, tag: "image")
+masterEditionAccount         → findMasterEditionPda(mint)
+uri                          → https://igw.metaplex.com/mainnet/<inscriptionAccount>
+```
+
+The `uri` is a convenience gateway for wallets, never a source of truth: the image bytes live in `associatedInscriptionAccount`.
+
+#### 3. Preparation transactions (`start`)
+
+Each step is skipped when the chain already reflects it, which is what makes resuming safe:
+
+| Step | Instruction | Skip condition |
+| --- | --- | --- |
+| Create the NFT | `createV1` — `NonFungible`, `sellerFeeBasisPoints` 0, `printSupply: Limited(1)` | mint account already exists |
+| Mint the token | `mintV1` — amount 1 to the signer | token supply already 1 |
+| Open the inscription | `initializeFromMint` | inscription account already exists |
+| Write metadata and open the image slot | `writeData` (JSON `{ name, symbol, description }` at offset 0) plus `initializeAssociatedInscription` (tag `image`), in one transaction | associated inscription account already exists |
+
+`start` returns the mint address, the owner, the write chunk size, and `writtenBytes` — the current on-chain length of the image account — so the client knows exactly where to continue from.
+
+#### 4. Chunked image writes (`append`)
+
+- Chunk size is **800 bytes**: one `writeData` instruction per version 1 transaction.
+- Writes are strictly ordered and offset-addressed. The offset must be a multiple of 800, and `offset + length` may never exceed the declared total size.
+- The offset-0 chunk is re-validated against the image byte signature server-side.
+- Before each write, the image account's current data length is read. If it already covers the target range, the chunk is treated as applied and skipped.
+- Each transaction is sent with a fresh blockhash and retried up to three times. On a `block height exceeded` or expired-signature error, the on-chain length is re-checked before retrying, so a transaction that actually landed is never written twice.
+- The response returns `nextOffset` and a `complete` flag. The client tracks progress as `offset / totalSize` and keeps the pending state, so an interrupted run resumes instead of restarting.
+
+A 1 MB image is roughly 1,300 sequential transactions — which is why progress tracking and resumability are part of the protocol, not a nicety.
+
+#### 5. On-chain verification
+
+After the final chunk:
+
+1. The client computes SHA-256 over the exact uploaded bytes.
+2. `validateInscription` is polled (up to 12 attempts, 2 seconds apart) until the Metaplex check reports `valid`.
+3. The digest returned by the verifier — computed from the bytes read back off the chain — must equal the local digest.
+
+A mismatch is a hard failure: the run stops and explicitly instructs the operator to resume the same mint rather than create a new one. Nothing is reported as successful until the chain-read bytes match the upload.
+
+#### 6. Finalization (`finalize`)
+
+- The Master Edition account is decoded to read `supply` and `maxSupply`.
+- `maxSupply` must be exactly 1. An existing mint that cannot satisfy this returns `409`, with the embedded image left intact.
+- When `supply` is 0, `printV1` prints edition number 1 using a signer derived deterministically from `SHA-256("master-edition-1:" + mint + walletKey)`, so a retried finalize reuses the same edition mint instead of printing a second one.
+- The run only succeeds at `maxSupply` 1 and `supply` 1.
+
+#### 7. Optional binding to a fungible token (`transfer`)
+
+- `transferV1` sends the finalized NFT to the associated token account owned by the fungible token's **mint address**.
+- Delivery is confirmed by reading a balance of exactly 1 in that destination token account, and the transfer is skipped when it already holds.
+- No private key exists for a mint address, so the NFT can never leave. The image becomes an irreversible property of the token, discoverable through the token-held check.
+
+#### Failure and resume rules
+
+| Symptom | Correct action |
+| --- | --- |
+| Transaction expired | Automatic retry with a fresh blockhash after re-checking chain state |
+| Interrupted upload | Resume the same mint; `start` recomputes the offset from `writtenBytes` |
+| Verifier not yet `valid` | Keep polling, then resume the same mint — never create a new one |
+| Digest mismatch | Stop and resume the same mint; a new mint would orphan paid-for chain data |
+| `maxSupply` cannot be set to 1 | The image stays verifiable; only the edition cannot be finalized on that mint |
+
 ## How Verification Works
 
 1. **Validate the input** — accept a Base58 Solana mint address or transaction signature.
