@@ -1,15 +1,18 @@
 import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { Buffer } from 'node:buffer';
 import { getInscriptionMetadataAccountDataSerializer } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
+import { secrets } from 'base44:runtime';
 
 export default async function(req) {
   try {
+    const rpcUrl = secrets.get('SOLANA_RPC_URL');
+    if (!rpcUrl) throw new Error('The private Solana RPC is not configured.');
     const { address } = await req.json();
     if (typeof address !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,88}$/.test(address)) return Response.json({ status: 'error', message: 'Enter a valid Solana mint address or transaction signature.' });
     const program = new PublicKey('1NSCRfGeyo7wPUazGbaPBUsTM49e1k2aXewHGARfzSo');
     const tokenPrograms = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
     const rpc = async (method, params) => {
-      const response = await fetch('https://solana-rpc.publicnode.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(18000) });
+      const response = await fetch(rpcUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(18000) });
       if (!response.ok) throw new Error('Solana is unavailable or rate-limiting requests. Please try again shortly.');
       const body = await response.json();
       if (body.error) throw new Error('Solana could not complete this lookup. Please try again shortly.');
