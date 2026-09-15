@@ -4,7 +4,7 @@ import { Buffer } from 'node:buffer';
 import bs58 from 'npm:bs58@6.0.0';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
-import { createV1, mintV1, mplTokenMetadata, TokenStandard } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
+import { createV1, findMasterEditionPda, mintV1, mplTokenMetadata, printV1, TokenStandard } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
 import { findAssociatedInscriptionPda, findInscriptionMetadataPda, findMintInscriptionPda, initializeAssociatedInscription, initializeFromMint, mplInscription, writeData } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
 
 const maxImageBytes = 1024 * 1024;
@@ -49,6 +49,19 @@ async function tokenHasSupply(rpcUrl, mint) {
   return result?.value?.amount === '1';
 }
 
+async function masterEditionState(rpcUrl, address) {
+  const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
+  if (!result?.value?.data?.[0]) return null;
+  const data = Buffer.from(result.value.data[0], 'base64');
+  return { supply: data.readBigUInt64LE(1), maxSupply: data[9] === 1 ? data.readBigUInt64LE(10) : null };
+}
+
+async function deterministicEditionSigner(umi, mintAddress, walletBytes) {
+  const material = Buffer.concat([Buffer.from('master-edition-1:'), Buffer.from(mintAddress), Buffer.from(walletBytes)]);
+  const seed = new Uint8Array(await crypto.subtle.digest('SHA-256', material));
+  return createSignerFromKeypair(umi, umi.eddsa.createKeypairFromSeed(seed));
+}
+
 async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -78,7 +91,8 @@ export default async function(req: Request): Promise<Response> {
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
-    const wallet = umi.eddsa.createKeypairFromSecretKey(parseWallet(secrets.get('MINT_WALLET_SECRET_KEY')));
+    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
+    const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
 
     if (input.action === 'start') {
@@ -110,6 +124,15 @@ export default async function(req: Request): Promise<Response> {
       if (!await tokenHasSupply(rpcUrl, mintAddress)) {
         await sendWithFreshBlockhash(mintV1(umi, { mint: mintKey, authority: umi.identity, amount: 1, tokenOwner: umi.identity.publicKey, tokenStandard: TokenStandard.NonFungible }), umi, () => tokenHasSupply(rpcUrl, mintAddress));
       }
+      const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
+      let editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
+      if (!editionState || editionState.maxSupply !== 1n) throw new Error('This mint does not have Master Edition maxSupply 1 and cannot be changed after creation.');
+      const editionSigner = await deterministicEditionSigner(umi, mintAddress, walletBytes);
+      if (editionState.supply === 0n) {
+        await sendWithFreshBlockhash(printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity.publicKey, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible }), umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
+        editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
+      }
+      if (editionState?.supply !== 1n) throw new Error('Master Edition print supply did not finalize at 1. Resume this mint; do not create another.');
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
       }
@@ -120,7 +143,7 @@ export default async function(req: Request): Promise<Response> {
           .add(initializeAssociatedInscription(umi, { inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
         await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       }
-      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true });
+      return Response.json({ mint: mintAddress, editionMint: editionSigner.publicKey.toString(), owner: umi.identity.publicKey.toString(), batchBytes, gatewayUrl: uri, prepared: true, maxSupply: '1', supply: '1' });
     }
 
     if (input.action === 'append') {
