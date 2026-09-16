@@ -60,7 +60,9 @@ export default function useInscribedMint() {
       pending = await prepare(pending);
       await append(pending);
     } catch (error) {
-      setState(current => ({ ...current, pending: current.pending || pending, busy: false, error: error.response?.data?.error || error.message || 'Minting stopped. Resume the existing mint instead of creating another.' }));
+      const server = error.response?.data?.error;
+      const where = !server && error.stack ? ` · ${String(error.stack).split('\n').slice(0, 3).join(' | ')}` : '';
+      setState(current => ({ ...current, pending: current.pending || pending, busy: false, error: (server || error.message || 'Minting stopped. Resume the existing mint instead of creating another.') + where }));
     }
   };
   const resume = async () => {
