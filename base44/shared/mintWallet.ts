@@ -7,6 +7,7 @@ export const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 export const mainnetGenesis = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 
 export function parseWallet(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('The mint wallet secret is missing or empty for the selected network.');
   const bytes = value.trim().startsWith('[') ? Uint8Array.from(JSON.parse(value)) : bs58.decode(value.trim());
   if (bytes.length !== 64) throw new Error('The mint wallet secret must contain 64 bytes.');
   return bytes;

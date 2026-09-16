@@ -24,7 +24,9 @@ export function networkRpcUrl(network = solanaNetwork()) {
     if (!devnetUrl) throw new Error('Set the SOLANA_RPC_URL_DEVNET secret before running on devnet.');
     return devnetUrl.trim();
   }
-  return secrets.get('SOLANA_RPC_URL').trim();
+  const mainnetUrl = optionalSecret('SOLANA_RPC_URL');
+  if (!mainnetUrl) throw new Error('The SOLANA_RPC_URL secret is missing or empty.');
+  return mainnetUrl.trim();
 }
 
 export function networkWalletBytes(network = solanaNetwork()) {
