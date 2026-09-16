@@ -1,7 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
-import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
+import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash } from '../../shared/mintWallet.ts';
+import { recoverableMintSigner, chunkMatches } from './recovery.ts';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
 import 'npm:@metaplex-foundation/umi@0.9.2/serializers';
@@ -59,7 +60,12 @@ async function deterministicEditionSigner(umi, mintAddress, walletBytes) {
 async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await builder.sendAndConfirm(umi, { send: { maxRetries: 0 }, confirm: { commitment: 'confirmed' } });
+      if (isApplied && await isApplied()) return;
+      // setBlockhash returns a new builder; sendAndConfirm rebuilds and signs it.
+      const freshBuilder = builder.setBlockhash(await getLatestBlockhash(umi));
+      const response = await freshBuilder.sendAndConfirm(umi, { send: { maxRetries: 0 }, confirm: { commitment: 'confirmed' } });
+      if (response.result?.value?.err) throw new Error(`Transaction failed: ${JSON.stringify(response.result.value.err)}`);
+      return response;
     } catch (error) {
       if (isApplied) {
         try {
@@ -69,7 +75,7 @@ async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
         }
       }
       const message = error instanceof Error ? error.message : String(error);
-      const expired = /block height exceeded|signature .* expired/i.test(message);
+      const expired = /block\s*height exceeded|blockhash not found|blockhash.*expired|signature .* expired|TransactionExpiredBlockheightExceededError/i.test(message);
       if (!expired || attempt === 2) throw error;
     }
   }
@@ -97,6 +103,7 @@ export default async function(req: Request): Promise<Response> {
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The image must be 1 MB or smaller.' }, { status: 400 });
       if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, or WebP image.' }, { status: 400 });
+      if (input.requestId !== undefined && (typeof input.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.requestId))) return Response.json({ error: 'Invalid mint recovery identifier.' }, { status: 400 });
       let mintSigner = null;
       let mintKey;
       if (input.mint) {
@@ -104,7 +111,7 @@ export default async function(req: Request): Promise<Response> {
         if (!mintPattern.test(existingMint) || !await accountExists(rpcUrl, existingMint)) return Response.json({ error: 'The existing mint account was not found.' }, { status: 400 });
         mintKey = publicKey(existingMint);
       } else {
-        mintSigner = generateSigner(umi);
+        mintSigner = await recoverableMintSigner(umi, walletBytes, input.requestId);
         mintKey = mintSigner.publicKey;
       }
       const mintAddress = mintKey.toString();
@@ -112,7 +119,7 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
       const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      if (mintSigner) {
+      if (mintSigner && !await accountExists(rpcUrl, mintAddress)) {
         await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Limited', fields: [1n] } }), umi, () => accountExists(rpcUrl, mintAddress));
       }
       if (!await tokenHasSupply(rpcUrl, mintAddress)) {
@@ -192,9 +199,13 @@ export default async function(req: Request): Promise<Response> {
       const imageAddress = associatedInscriptionAccount[0].toString();
       const value = new Uint8Array(bytes.subarray(0, writeChunkBytes));
       const writtenEnd = offset + value.length;
-      if (await accountDataLength(rpcUrl, imageAddress) < writtenEnd) {
-        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value, associatedTag: 'image', offset }), umi, async () => await accountDataLength(rpcUrl, imageAddress) >= writtenEnd);
+      // A later concurrent write can extend the account past an unwritten hole.
+      // Length alone is not proof that this particular chunk was applied.
+      const applied = () => chunkMatches(rpcUrl, imageAddress, offset, value);
+      if (!await applied()) {
+        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value, associatedTag: 'image', offset }), umi, applied);
       }
+      if (!await applied()) throw new Error('The image chunk has not confirmed yet. Retry this offset.');
       return Response.json({ nextOffset: writtenEnd, complete: writtenEnd === totalSize });
     }
     return Response.json({ error: 'Invalid mint action.' }, { status: 400 });

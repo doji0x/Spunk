@@ -21,6 +21,10 @@ export async function assertMainnet(rpcUrl) {
   if (payload.result !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
 }
 
+export async function getLatestBlockhash(umi) {
+  return await umi.rpc.getLatestBlockhash({ commitment: 'confirmed' });
+}
+
 export async function rpcRequest(rpcUrl, method, params) {
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
   const payload = await response.json();
