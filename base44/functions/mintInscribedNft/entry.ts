@@ -1,7 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
-import bs58 from 'npm:bs58@6.0.0';
+import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
 import 'npm:@metaplex-foundation/umi@0.9.2/serializers';
@@ -14,40 +14,12 @@ const writeChunkBytes = 800;
 const batchBytes = writeChunkBytes;
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-function parseWallet(value) {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error('MINT_WALLET_SECRET_KEY is missing or empty. Re-save a 64-byte Solana keypair in Secrets.');
-  }
-  const normalized = value.trim();
-  let bytes;
-  try {
-    bytes = normalized.startsWith('[') ? Uint8Array.from(JSON.parse(normalized)) : bs58.decode(normalized);
-  } catch {
-    throw new Error('MINT_WALLET_SECRET_KEY must be a base58 keypair or a JSON array of 64 bytes.');
-  }
-  if (bytes.length !== 64) throw new Error('MINT_WALLET_SECRET_KEY must contain exactly 64 bytes.');
-  return bytes;
-}
-
 function isSupportedImage(bytes, mimeType) {
   if (mimeType === 'image/png') return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
   if (mimeType === 'image/gif') return bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString());
   if (mimeType === 'image/webp') return bytes.length >= 12 && bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
   return false;
-}
-
-async function assertMainnet(rpcUrl) {
-  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getGenesisHash' }) });
-  const payload = await response.json();
-  if (payload.result !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
-}
-
-async function rpcRequest(rpcUrl, method, params) {
-  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-  const payload = await response.json();
-  if (payload.error) throw new Error(payload.error.message || 'Solana RPC request failed.');
-  return payload.result;
 }
 
 async function accountExists(rpcUrl, address) {

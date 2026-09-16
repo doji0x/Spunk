@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import MintForm from '@/components/admin/MintForm';
 import MintStatus from '@/components/admin/MintStatus';
+import PumpLaunchPanel from '@/components/admin/PumpLaunchPanel';
 import useInscribedMint from '@/hooks/useInscribedMint';
 
 export default function AdminMint() {
@@ -16,6 +17,7 @@ export default function AdminMint() {
     <div className="mx-auto max-w-2xl"><Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-[#657456]"><ArrowLeft size={16} />Back to validator</Link>
       <div className="mb-7 flex items-start gap-3"><span className="rounded-full bg-[#edf2e6] p-2 text-[#66834a]"><ShieldCheck size={20} /></span><div><p className="font-mono text-[10px] tracking-widest text-[#66834a]">ADMIN · SOLANA MAINNET</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Mint an inscribed NFT</h1><p className="mt-2 text-sm leading-6 text-[#7e8773]">Creates one NFT owned by the server mint wallet and writes its metadata and complete image bytes directly on-chain. No Arweave, IPFS, or external image URL is used.</p></div></div>
       <MintForm onMint={mint.start} busy={mint.busy} /><MintStatus {...mint} onResume={mint.resume} />
+      <PumpLaunchPanel inscriptionBusy={mint.busy} />
     </div>
   </main>;
 }
