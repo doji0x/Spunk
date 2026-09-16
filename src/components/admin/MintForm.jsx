@@ -12,9 +12,10 @@ export default function MintForm({ onMint, busy }) {
   const [details, setDetails] = useState('');
   const [file, setFile] = useState(null);
   const [mint, setMint] = useState('');
+  const [tokenMint, setTokenMint] = useState('');
   const submit = event => {
     event.preventDefault();
-    onMint({ name, symbol, details, file, mint });
+    onMint({ name, symbol, details, file, mint, tokenMint });
   };
   return <form onSubmit={submit} className="space-y-5 rounded-2xl border border-[#dce1d5] bg-white p-6 shadow-sm">
     <div className="grid gap-5 sm:grid-cols-2">
@@ -23,6 +24,7 @@ export default function MintForm({ onMint, busy }) {
     </div>
     <div className="space-y-2"><Label htmlFor="mint">Recover existing mint <span className="font-normal text-[#7e8773]">(optional)</span></Label><Input id="mint" value={mint} onChange={event => setMint(event.target.value)} placeholder="Paste a partially completed mint address" disabled={busy} /><p className="text-xs text-[#7e8773]">Use this to finish a mint whose NFT exists but inscription did not complete.</p></div>
     <ImageUploadField disabled={busy} onFileChange={setFile} />
+    <div className="space-y-2"><Label htmlFor="tokenMint">Token contract address <span className="font-normal text-[#7e8773]">(optional)</span></Label><Input id="tokenMint" value={tokenMint} onChange={event => setTokenMint(event.target.value)} placeholder="Paste the pre-mined token CA to bind this image to" disabled={busy} /><p className="text-xs text-[#7e8773]">Written into the inscription as its token_mint field, so anyone can check this image against that token. Paste the same NFT mint into the token's own description to complete the pair.</p></div>
     <div className="space-y-2"><Label htmlFor="details">Details</Label><Textarea id="details" maxLength={1000} rows={5} value={details} onChange={event => setDetails(event.target.value)} placeholder="Description and details stored in the NFT inscription" required disabled={busy} /></div>
     <Button type="submit" disabled={busy || !file} className="w-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Minting on mainnet…</> : 'Mint one inscribed NFT'}</Button>
   </form>;

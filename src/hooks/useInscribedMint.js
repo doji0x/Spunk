@@ -44,7 +44,7 @@ export default function useInscribedMint() {
   };
   const prepare = async pending => {
     if (pending.prepared) return pending;
-    const { data } = await base44.functions.invoke('mintInscribedNft', { action: 'start', mint: pending.mint || undefined, name: pending.name, symbol: pending.symbol, details: pending.details, mimeType: pending.mimeType, totalSize: pending.bytes.length });
+    const { data } = await base44.functions.invoke('mintInscribedNft', { action: 'start', mint: pending.mint || undefined, name: pending.name, symbol: pending.symbol, details: pending.details, tokenMint: pending.tokenMint || undefined, mimeType: pending.mimeType, totalSize: pending.bytes.length });
     const resumeOffset = Math.min(Math.floor((data.writtenBytes || 0) / data.batchBytes) * data.batchBytes, pending.bytes.length);
     const prepared = { ...pending, ...data, offset: Math.max(pending.offset, resumeOffset) };
     setState(current => ({ ...current, pending: prepared, progress: 1 }));
@@ -55,7 +55,7 @@ export default function useInscribedMint() {
     let pending = null;
     try {
       const bytes = new Uint8Array(await values.file.arrayBuffer());
-      pending = { mint: values.mint?.trim() || '', name: values.name, symbol: values.symbol, details: values.details, bytes, mimeType: values.file.type, offset: 0, prepared: false };
+      pending = { mint: values.mint?.trim() || '', name: values.name, symbol: values.symbol, details: values.details, tokenMint: values.tokenMint?.trim() || '', bytes, mimeType: values.file.type, offset: 0, prepared: false };
       if (pending.mint) setState(current => ({ ...current, pending }));
       pending = await prepare(pending);
       await append(pending);

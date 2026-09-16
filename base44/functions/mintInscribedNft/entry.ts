@@ -30,6 +30,8 @@ export default async function(req: Request): Promise<Response> {
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The image must be 1 MB or smaller.' }, { status: 400 });
       if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, or WebP image.' }, { status: 400 });
+      const boundToken = String(input.tokenMint || '').trim();
+      if (boundToken && (!mintPattern.test(boundToken) || !await accountExists(rpcUrl, boundToken))) return Response.json({ error: 'That token contract address was not found on this network.' }, { status: 400 });
       let mintSigner = null;
       let mintKey = null;
       if (input.mint) {
@@ -39,7 +41,7 @@ export default async function(req: Request): Promise<Response> {
       } else {
         mintSigner = generateSigner(umi);
       }
-      const result = await prepareInscription(umi, rpcUrl, { mintSigner, mintKey, name, symbol, metadata: { name, symbol, description } });
+      const result = await prepareInscription(umi, rpcUrl, { mintSigner, mintKey, name, symbol, metadata: boundToken ? { name, symbol, description, token_mint: boundToken } : { name, symbol, description } });
       const editionState = await masterEditionState(rpcUrl, findMasterEditionPda(umi, { mint: publicKey(result.mint) })[0].toString());
       return Response.json({ mint: result.mint, owner: umi.identity.publicKey.toString(), batchBytes: writeChunkBytes, writtenBytes: result.writtenBytes, gatewayUrl: result.uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
     }
