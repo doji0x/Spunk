@@ -14,8 +14,17 @@ const batchBytes = writeChunkBytes;
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function parseWallet(value) {
-  const bytes = value.trim().startsWith('[') ? Uint8Array.from(JSON.parse(value)) : bs58.decode(value.trim());
-  if (bytes.length !== 64) throw new Error('The mint wallet secret must contain 64 bytes.');
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('MINT_WALLET_SECRET_KEY is missing or empty. Re-save a 64-byte Solana keypair in Secrets.');
+  }
+  const normalized = value.trim();
+  let bytes;
+  try {
+    bytes = normalized.startsWith('[') ? Uint8Array.from(JSON.parse(normalized)) : bs58.decode(normalized);
+  } catch {
+    throw new Error('MINT_WALLET_SECRET_KEY must be a base58 keypair or a JSON array of 64 bytes.');
+  }
+  if (bytes.length !== 64) throw new Error('MINT_WALLET_SECRET_KEY must contain exactly 64 bytes.');
   return bytes;
 }
 
