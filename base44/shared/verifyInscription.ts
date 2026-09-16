@@ -2,6 +2,7 @@ import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { Buffer } from 'node:buffer';
 import { solanaRpc, indexedAsset } from './solanaServices.ts';
 import { programAddress, derive, linkedMint, resolveIndexedMint, decodeMetadata, imageAddress } from './inscriptionMetadata.ts';
+import { detectImageMime } from './imageMime.ts';
 
 export async function verifyInscription(address) {
   try {
@@ -53,7 +54,7 @@ export async function verifyInscription(address) {
       // Earlier mint inscriptions omit the optional mint field. Their canonical mint-derived PDAs still prove linkage.
       if (metadata.mint?.__option === 'Some' ? metadata.mint.value !== mints[i] : metadata.key !== 2) continue;
       if (!metadata.associatedInscriptions.some(a => a.tag === 'image')) continue;
-      findings.push({ mint: mints[i], root: roots[i], metadata: metadataKeys[i], imageAccount: imageAddress(metadataKeys[i]), immutable: metadata.updateAuthorities.length === 0 });
+      findings.push({ mint: mints[i], root: roots[i], metadata: metadataKeys[i], imageAccount: imageAddress(metadataKeys[i]), immutable: metadata.updateAuthorities.length === 0, updateAuthorities: metadata.updateAuthorities.map(a => a.toString()) });
     }
     if (!findings.length) return { status: 'invalid', reason: 'No token-linked image inscription was found under the supported Metaplex standard. Other inscription protocols are not checked.' };
     if (findings.length > 1) return { status: 'unknown', message: 'This transaction includes more than one inscribed token. Paste the specific token mint address to choose which image to verify.' };
@@ -64,8 +65,7 @@ export async function verifyInscription(address) {
     const [image] = await getAccounts([found.imageAccount]);
     if (!image || image.owner !== programAddress) throw new Error('The image account changed during verification. Please try again.');
     const bytes = Buffer.from(image.data[0], 'base64');
-    const hex = bytes.subarray(0, 12).toString('hex');
-    const mime = hex.startsWith('89504e470d0a1a0a') ? 'image/png' : hex.startsWith('ffd8ff') ? 'image/jpeg' : /^474946383[79]61/.test(hex) ? 'image/gif' : bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : null;
+    const mime = detectImageMime(bytes);
     if (!mime) return { status: 'unknown', message: 'An image-tagged inscription exists, but its bytes are not a supported PNG, JPEG, GIF, or WebP image.' };
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const indexer = await indexedAsset(found.mint);

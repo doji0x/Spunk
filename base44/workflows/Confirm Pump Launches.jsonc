@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "confirm_pump_launches",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "confirm_pending": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "confirmLaunches",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Confirm pending launches",
+            "description": "Settle against Solana"
+          }
+        }
+      }
+    ]
+  },
+  "name": "Confirm Pump Launches",
+  "description": "Every 5 minutes, checks pending pump.fun launches on-chain and records confirmed, failed, or expired outcomes.",
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/5 * * * *",
+      "one_time_date": null,
+      "timezone": "America/Los_Angeles",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  }
+}

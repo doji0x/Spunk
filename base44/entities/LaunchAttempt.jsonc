@@ -1,0 +1,62 @@
+{
+  "name": "LaunchAttempt",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Client-generated UUID; the coin mint keypair is derived from it."
+    },
+    "inscribedMint": {
+      "type": "string",
+      "description": "Source inscribed NFT mint address."
+    },
+    "coinMint": {
+      "type": "string",
+      "description": "Derived pump.fun coin mint address."
+    },
+    "bondingCurve": {
+      "type": "string",
+      "description": "pump.fun bonding curve PDA."
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "metadataUri": {
+      "type": "string",
+      "description": "Self-hosted metadata URI written on-chain."
+    },
+    "signature": {
+      "type": "string",
+      "description": "Latest launch transaction signature."
+    },
+    "lastValidBlockHeight": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "confirmed",
+        "failed",
+        "expired"
+      ],
+      "default": "pending"
+    },
+    "error": {
+      "type": "string"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "requestId",
+    "inscribedMint",
+    "coinMint",
+    "status"
+  ]
+}
