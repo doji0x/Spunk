@@ -18,8 +18,9 @@ export default function usePumpLaunch() {
     let active = true;
     const load = () => base44.entities.LaunchAttempt.filter({ requestId }).then(([found]) => { if (active && found) setAttempt(found); }).finally(() => active && setLoading(false));
     load();
-    const timer = window.setInterval(() => { if (attempt?.status === 'pending') load(); }, 15000);
-    return () => { active = false; window.clearInterval(timer); };
+    // Only a pending launch needs polling; the timer is torn down on every status change.
+    const timer = attempt?.status === 'pending' ? window.setInterval(load, 15000) : null;
+    return () => { active = false; if (timer) window.clearInterval(timer); };
   }, [requestId, attempt?.status]);
   function savePointer(value) {
     setPointer(value);
