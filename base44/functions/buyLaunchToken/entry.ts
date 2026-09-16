@@ -1,7 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { Connection, Keypair } from 'npm:@solana/web3.js@1.98.4';
-import { assertMainnet, mintPattern, parseWallet, signaturePattern } from '../../shared/mintWallet.ts';
+import { mintPattern, signaturePattern } from '../../shared/mintWallet.ts';
+import { resolveNetwork } from '../../shared/solanaNetwork.ts';
 import { launchKeypairs, transferLaunchTokens } from '../../shared/token2022Launch.ts';
 
 const publicView = launch => ({ id: launch.id, name: launch.name, symbol: launch.symbol, description: launch.description, status: launch.status, priceLamports: launch.priceLamports, supply: launch.supply, soldTokens: launch.soldTokens || 0, remaining: launch.supply - (launch.soldTokens || 0), vaultAddress: launch.vaultAddress, tokenMint: launch.tokenMint, nftMint: launch.nftMint });
@@ -24,8 +25,7 @@ export default async function(req: Request): Promise<Response> {
       if (launch.status !== 'on_sale') return Response.json({ error: 'This sale is not open.' }, { status: 409 });
       const [existing] = await purchases.filter({ signature });
       if (existing?.status === 'delivered') return Response.json({ error: 'This payment was already redeemed.' }, { status: 409 });
-      const rpcUrl = secrets.get('SOLANA_RPC_URL');
-      await assertMainnet(rpcUrl);
+      const { rpcUrl, walletBytes } = await resolveNetwork();
       const connection = new Connection(rpcUrl, 'confirmed');
       const tx = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
       if (!tx) return Response.json({ error: 'Payment transaction not found yet. Wait for confirmation and try again.' }, { status: 404 });
@@ -39,7 +39,6 @@ export default async function(req: Request): Promise<Response> {
       if (remaining <= 0) { await launches.update(launch.id, { status: 'closed' }); return Response.json({ error: 'The sale is sold out.' }, { status: 409 }); }
       const tokens = Math.min(Math.floor(lamports / launch.priceLamports), remaining);
       const purchase = existing || await purchases.create({ launchId: launch.id, signature, buyer, lamports, tokens, status: 'pending' });
-      const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
       const wallet = Keypair.fromSecretKey(walletBytes);
       const keys = await launchKeypairs(walletBytes, launch.id);
       if (keys.tokenMint.publicKey.toBase58() !== launch.tokenMint) throw new Error('Launch wallet mismatch.');

@@ -5,7 +5,8 @@ import { createSignerFromKeypair, generateSigner, publicKey, signerIdentity } fr
 import { findMasterEditionPda, mplTokenMetadata, printV1, TokenStandard, transferV1 } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
 import { findAssociatedTokenPda } from 'npm:@metaplex-foundation/mpl-toolbox@0.9.4';
 import { mplInscription } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
-import { accountExists, assertMainnet, deterministicSigner, masterEditionState, mintPattern, parseWallet, sendWithFreshBlockhash, tokenBalance } from '../../shared/mintWallet.ts';
+import { accountExists, deterministicSigner, masterEditionState, mintPattern, sendWithFreshBlockhash, tokenBalance } from '../../shared/mintWallet.ts';
+import { resolveNetwork } from '../../shared/solanaNetwork.ts';
 import { appendImageChunk, parseChunk, prepareInscription, writeChunkBytes } from '../../shared/inscriptionWriter.ts';
 
 const maxImageBytes = 1024 * 1024;
@@ -17,10 +18,8 @@ export default async function(req: Request): Promise<Response> {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     if (user.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 });
     const input = await req.json();
-    const rpcUrl = secrets.get('SOLANA_RPC_URL');
-    await assertMainnet(rpcUrl);
+    const { rpcUrl, walletBytes } = await resolveNetwork();
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
-    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     umi.use(signerIdentity(createSignerFromKeypair(umi, umi.eddsa.createKeypairFromSecretKey(walletBytes))));
 
     if (input.action === 'start') {

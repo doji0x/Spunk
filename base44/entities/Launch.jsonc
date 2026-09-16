@@ -55,7 +55,9 @@
         "inscribed",
         "launched",
         "on_sale",
-        "closed"
+        "closed",
+        "on_curve",
+        "graduated"
       ],
       "default": "preparing"
     },
@@ -73,6 +75,58 @@
     "withdrawnLamports": {
       "type": "integer",
       "default": 0
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "mainnet",
+        "devnet"
+      ],
+      "default": "mainnet",
+      "description": "Cluster this launch was created on"
+    },
+    "pumpMint": {
+      "type": "string",
+      "description": "pump.fun coin mint address"
+    },
+    "pumpBondingCurve": {
+      "type": "string",
+      "description": "pump.fun bonding curve PDA"
+    },
+    "pumpUri": {
+      "type": "string",
+      "description": "Immutable metadata URI carrying the inscription binding"
+    },
+    "pumpPoolAddress": {
+      "type": "string",
+      "description": "PumpSwap pool address after graduation"
+    },
+    "probeLog": {
+      "type": "array",
+      "description": "Per-step devnet probe costs and signatures",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "lamports": {
+            "type": "integer"
+          },
+          "fee": {
+            "type": "integer"
+          },
+          "computeUnits": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "required": [

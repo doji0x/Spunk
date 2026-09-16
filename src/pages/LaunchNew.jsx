@@ -6,6 +6,7 @@ import { sha256Hex } from '@/lib/bytes';
 import AdminGate from '@/components/admin/AdminGate';
 import ImageUploadField from '@/components/admin/ImageUploadField';
 import LaunchEstimate from '@/components/launchpad/LaunchEstimate';
+import NetworkBanner from '@/components/launchpad/NetworkBanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +29,7 @@ export default function LaunchNew() {
   };
   return <AdminGate><main className="validate-surface min-h-screen px-5 py-10 text-[#252b20]">
     <div className="mx-auto max-w-2xl"><Link to="/admin/launchpad" className="mb-8 inline-flex items-center gap-2 text-sm text-[#657456]"><ArrowLeft size={16} />All launches</Link>
+      <NetworkBanner />
       <p className="font-mono text-[10px] tracking-widest text-[#66834a]">NEW LAUNCH · STEP 1 OF 3</p><h1 className="mt-1 mb-6 text-3xl font-semibold tracking-tight">Token details and image</h1>
       <form onSubmit={submit} className="space-y-5 rounded-2xl border border-[#dce1d5] bg-white p-6 shadow-sm">
         <div className="grid gap-5 sm:grid-cols-2">

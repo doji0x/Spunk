@@ -6,7 +6,8 @@ import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, publicKey, signerIdentity } from 'npm:@metaplex-foundation/umi@0.9.2';
 import { mplTokenMetadata } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
 import { mplInscription } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
-import { accountData, assertMainnet, deterministicSigner, parseWallet } from '../../shared/mintWallet.ts';
+import { accountData, deterministicSigner } from '../../shared/mintWallet.ts';
+import { resolveNetwork } from '../../shared/solanaNetwork.ts';
 import { appendImageChunk, inscriptionAddresses, parseChunk, prepareInscription, writeChunkBytes } from '../../shared/inscriptionWriter.ts';
 import { estimateTokenMintBytes, launchKeypairs, runLaunchSteps, withdrawVault } from '../../shared/token2022Launch.ts';
 
@@ -36,9 +37,7 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ chunks, setupTransactions, nftRent, inscriptionRent, tokenRent, fees, total: nftRent + inscriptionRent + tokenRent + fees });
     }
 
-    const rpcUrl = secrets.get('SOLANA_RPC_URL');
-    await assertMainnet(rpcUrl);
-    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
+    const { network, rpcUrl, walletBytes } = await resolveNetwork();
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
     umi.use(signerIdentity(createSignerFromKeypair(umi, umi.eddsa.createKeypairFromSecretKey(walletBytes))));
     const connection = new Connection(rpcUrl, 'confirmed');
@@ -55,7 +54,7 @@ export default async function(req: Request): Promise<Response> {
       if (!Number.isInteger(supply) || supply < 1 || supply > 1e12) return Response.json({ error: 'Supply must be a whole number of tokens up to 1 trillion.' }, { status: 400 });
       if (!Number.isInteger(priceLamports) || priceLamports < 1) return Response.json({ error: 'Set a price of at least 1 lamport per token.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes || !mimeTypes.includes(input.mimeType) || !/^[0-9a-f]{64}$/.test(String(input.imageHash || ''))) return Response.json({ error: 'Upload a PNG, JPEG, GIF, or WebP image of 1 MB or smaller.' }, { status: 400 });
-      const created = await launches.create({ name, symbol, description, decimals: 6, supply, priceLamports, imageMime: input.mimeType, imageSize: totalSize, imageHash: input.imageHash, status: 'preparing' });
+      const created = await launches.create({ name, symbol, description, decimals: 6, supply, priceLamports, imageMime: input.mimeType, imageSize: totalSize, imageHash: input.imageHash, status: 'preparing', network });
       const keys = await launchKeypairs(walletBytes, created.id);
       const nftMint = publicKey(keys.inscriptionNft.publicKey.toBase58());
       const umiAddresses = inscriptionAddresses(umi, nftMint);
