@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Check, ArrowUpRight } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import ValidateHeader from '@/components/ValidateHeader';
@@ -24,10 +24,6 @@ export default function Home() {
     } catch { setResult({ status: 'unknown', message: 'The verification service is unavailable. Please try again shortly.' }); }
     finally { setLoading(false); }
   };
-  useEffect(() => {
-    const address = new URLSearchParams(window.location.search).get('address');
-    if (address) validate(address);
-  }, []);
   return <div className="validate-surface flex min-h-screen flex-col text-[#252b20]">
     <ValidateHeader onLearn={() => setAbout(true)} />
     <main className="mx-auto w-full max-w-[1100px] flex-1 px-5 pb-14 pt-12 text-center sm:pt-16 lg:pt-[72px]">
