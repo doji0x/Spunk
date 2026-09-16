@@ -9,7 +9,7 @@ export const writeChunkBytes = 800;
 export function inscriptionAddresses(umi, mintKey) {
   const inscriptionAccount = findMintInscriptionPda(umi, { mint: mintKey });
   const inscriptionMetadataAccount = findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
-  const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
+  const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associationTag: 'image', associated_tag: 'image', inscriptionMetadataAccount: inscriptionMetadataAccount[0] });
   return { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, uri: `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}` };
 }
 
