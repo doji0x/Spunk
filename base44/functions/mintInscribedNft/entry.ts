@@ -4,6 +4,7 @@ import { Buffer } from 'node:buffer';
 import bs58 from 'npm:bs58@6.0.0';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
+import 'npm:@metaplex-foundation/umi@0.9.2/serializers';
 import { createV1, findMasterEditionPda, mintV1, mplTokenMetadata, printV1, TokenStandard, transferV1 } from 'npm:@metaplex-foundation/mpl-token-metadata@3.4.0';
 import { findAssociatedTokenPda } from 'npm:@metaplex-foundation/mpl-toolbox@0.9.4';
 import { findAssociatedInscriptionPda, findInscriptionMetadataPda, findMintInscriptionPda, initializeAssociatedInscription, initializeFromMint, mplInscription, writeData } from 'npm:@metaplex-foundation/mpl-inscription@0.8.1';
@@ -170,7 +171,18 @@ export default async function(req: Request): Promise<Response> {
       if (!editionState || editionState.maxSupply !== 1n) return Response.json({ error: 'The image is embedded, but this existing mint cannot be changed to Master Edition maxSupply 1.' }, { status: 409 });
       const editionSigner = await deterministicEditionSigner(umi, mint, walletBytes);
       if (editionState.supply === 0n) {
-        await sendWithFreshBlockhash(printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity.publicKey, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible }), umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
+        const masterTokenAccount = findAssociatedTokenPda(umi, { mint: mintKey, owner: umi.identity.publicKey });
+        if (!await tokenBalance(rpcUrl, masterTokenAccount[0].toString())) {
+          return Response.json({ error: `The image remains inscribed, but the mint wallet no longer holds the original NFT, so it cannot print the final edition. The NFT must be returned to ${umi.identity.publicKey} before resuming. If the recipient cannot authorize a return, this mint cannot be finalized by this wallet.` }, { status: 409 });
+        }
+        const builder = printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible });
+        if (input.simulate === true) {
+          const transaction = await builder.buildAndSign(umi);
+          const encoded = Buffer.from(umi.transactions.serialize(transaction)).toString('base64');
+          const simulation = await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: true }]);
+          return Response.json({ simulated: true, error: simulation.value.err, logs: simulation.value.logs });
+        }
+        await sendWithFreshBlockhash(builder, umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
         editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
       }
       if (editionState.supply !== 1n) throw new Error('Master Edition print supply did not finalize at 1. Resume this mint; do not create another.');
