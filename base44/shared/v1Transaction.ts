@@ -1,5 +1,9 @@
 import { Buffer } from 'node:buffer';
+import bs58 from 'npm:bs58@6.0.0';
 import { solanaRpc, recentAddressSignatures } from './solanaServices.ts';
+
+const commitmentPrefix = Buffer.concat([Buffer.from('VALIDATE', 'ascii'), Buffer.from([1])]);
+const commitmentHeaderBytes = commitmentPrefix.length + 32 + 32;
 
 function parseV1Message(wire) {
   if (wire.length < 42 || wire[0] !== 0x81) throw new Error('The transaction is not encoded as Solana v1.');
@@ -7,6 +11,8 @@ function parseV1Message(wire) {
   const configMask = wire.readUInt32LE(4);
   const instructionCount = wire[40];
   const addressCount = wire[41];
+  const addresses = [];
+  for (let i = 0; i < addressCount; i++) addresses.push(wire.subarray(42 + i * 32, 42 + (i + 1) * 32));
   let offset = 42 + addressCount * 32;
   let configFields = 0;
   for (let mask = configMask; mask; mask >>>= 1) configFields += mask & 1;
@@ -26,7 +32,7 @@ function parseV1Message(wire) {
   }
   const signatureBytes = requiredSignatures * 64;
   if (offset + signatureBytes !== wire.length) throw new Error('The v1 transaction has an invalid signature section.');
-  return { message: wire.subarray(0, offset), instructions };
+  return { message: wire.subarray(0, offset), instructions, signerAddresses: addresses.slice(0, requiredSignatures) };
 }
 
 function imageSlice(bytes) {
@@ -68,13 +74,38 @@ async function formatMatch(match, confidence, signature) {
   };
 }
 
-export async function inspectV1Transaction(signature) {
+async function committedImage(parsed, mint) {
+  const mintBytes = Buffer.from(bs58.decode(mint));
+  if (mintBytes.length !== 32) return null;
+  const mintSigned = parsed.signerAddresses.some(address => address.equals(mintBytes));
+  if (!mintSigned) return null;
+  for (const instruction of parsed.instructions) {
+    if (instruction.length <= commitmentHeaderBytes || !instruction.subarray(0, commitmentPrefix.length).equals(commitmentPrefix)) continue;
+    if (!instruction.subarray(commitmentPrefix.length, commitmentPrefix.length + 32).equals(mintBytes)) continue;
+    const expectedHash = instruction.subarray(commitmentPrefix.length + 32, commitmentHeaderBytes);
+    const imageBytes = instruction.subarray(commitmentHeaderBytes);
+    const match = imageSlice(imageBytes);
+    if (!match || match.bytes.length !== imageBytes.length) continue;
+    const digest = Buffer.from(await crypto.subtle.digest('SHA-256', match.bytes));
+    if (!digest.equals(expectedHash)) continue;
+    return match;
+  }
+  return null;
+}
+
+export async function inspectV1Transaction(signature, expectedMint = null) {
   const response = await solanaRpc('getTransaction', [signature, { encoding: 'base64', commitment: 'finalized', maxSupportedTransactionVersion: 1 }]);
   if (!response) return { status: 'invalid', reason: 'Transaction not found on Solana mainnet.' };
   if (response.meta?.err) return { status: 'invalid', reason: 'The transaction failed and did not commit data.' };
   if (response.version !== 1) return { status: 'invalid', reason: 'No image was found in a Solana v1 transaction.' };
   const wire = Buffer.from(response.transaction[0], 'base64');
   const parsed = parseV1Message(wire);
+  if (expectedMint) {
+    const match = await committedImage(parsed, expectedMint);
+    if (!match) return { status: 'invalid', reason: 'No authorized V1 VALIDATE v1 commitment was found for this mint.' };
+    const result = await formatMatch(match, 'high', signature);
+    return { ...result, mint: expectedMint, commitment: 'VALIDATE-v1', mintAuthorized: true };
+  }
   for (const instruction of parsed.instructions) {
     const match = imageSlice(instruction);
     if (match) return formatMatch(match, 'high', signature);
@@ -90,14 +121,14 @@ export async function findV1Inscription(input) {
     let checked = 0;
     for (let i = 0; i < signatures.length; i += 4) {
       const results = await Promise.all(signatures.slice(i, i + 4).map(async signature => {
-        try { return await inspectV1Transaction(signature); } catch { return null; }
+        try { return await inspectV1Transaction(signature, input); } catch { return null; }
       }));
       checked += results.filter(Boolean).length;
       const found = results.find(result => result?.status === 'valid');
       if (found) return found;
     }
     if (!checked && signatures.length) return { status: 'unknown', message: 'Recent mint transactions could not be read with v1 support.' };
-    return { status: 'invalid', reason: signatures.length ? `No v1 image inscription was found in the ${signatures.length} most recent mint transactions.` : 'No recent transactions were available for this mint.' };
+    return { status: 'invalid', reason: signatures.length ? `No authorized V1 VALIDATE v1 image commitment was found in the ${signatures.length} most recent mint transactions.` : 'No recent transactions were available for this mint.' };
   } catch (error) {
     return { status: 'unknown', message: error.message || 'Unable to check v1 transaction inscriptions right now.' };
   }

@@ -9,9 +9,12 @@ export async function verifyAllInscriptions(address) {
   }
   const [metaplex, v1, libreplex, held] = await Promise.all([verifyMetaplex(address), findV1Inscription(address), verifyLibreplex(address), verifyHeldInscription(address)]);
   const all = [metaplex, v1, libreplex, held];
-  const valid = all.some(check => check.status === 'valid');
+  // Mint-address V1 results are valid only when the mint signed the exact
+  // VALIDATE v1 payload that commits to the image hash.
+  const v1Trusted = address.length > 44 || (v1.status === 'valid' && v1.commitment === 'VALIDATE-v1' && v1.mintAuthorized === true && v1.mint === address);
+  const valid = metaplex.status === 'valid' || libreplex.status === 'valid' || held.status === 'valid' || v1Trusted;
   const unknown = all.some(check => check.status === 'unknown');
-  const primary = metaplex.status === 'valid' ? metaplex : libreplex.status === 'valid' ? libreplex : v1.status === 'valid' ? v1 : held.status === 'valid' ? held : {};
+  const primary = metaplex.status === 'valid' ? metaplex : libreplex.status === 'valid' ? libreplex : v1Trusted ? v1 : held.status === 'valid' ? held : {};
   return {
     ...primary,
     status: valid ? 'valid' : unknown ? 'unknown' : 'invalid',
