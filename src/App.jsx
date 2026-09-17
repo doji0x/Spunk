@@ -9,6 +9,7 @@ import ScrollToTop from './components/ScrollToTop';
 // Add page imports here
 import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
+import AdminMints from '@/pages/AdminMints';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -48,6 +49,9 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fmint" replace />} />}>
         <Route path="/admin/mint" element={<AdminMint />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fmints" replace />} />}>
+        <Route path="/admin/mints" element={<AdminMints />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

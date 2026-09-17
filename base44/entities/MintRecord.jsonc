@@ -1,0 +1,71 @@
+{
+  "name": "MintRecord",
+  "type": "object",
+  "properties": {
+    "mint": {
+      "type": "string",
+      "description": "Inscribed NFT mint contract address."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Stable client mint recovery identifier."
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "imageHash": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "in_progress",
+        "success",
+        "failed"
+      ],
+      "default": "in_progress"
+    },
+    "errorMessage": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "mint",
+    "requestId",
+    "name",
+    "symbol",
+    "description",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

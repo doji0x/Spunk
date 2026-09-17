@@ -29,10 +29,13 @@ async function accountExists(rpcUrl, address) {
   return Boolean(result?.value);
 }
 
-async function accountDataLength(rpcUrl, address) {
+async function accountData(rpcUrl, address) {
   const result = await rpcRequest(rpcUrl, 'getAccountInfo', [address, { commitment: 'confirmed', encoding: 'base64' }]);
-  if (!result?.value?.data?.[0]) return 0;
-  return Buffer.from(result.value.data[0], 'base64').length;
+  return result?.value?.data?.[0] ? Buffer.from(result.value.data[0], 'base64') : null;
+}
+
+async function accountDataLength(rpcUrl, address) {
+  return (await accountData(rpcUrl, address))?.length || 0;
 }
 
 async function tokenBalance(rpcUrl, tokenAccount) {
@@ -141,6 +144,32 @@ export default async function(req: Request): Promise<Response> {
       const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
       const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
       return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
+    }
+
+    if (input.action === 'updateMetadata') {
+      const mint = String(input.mint || '').trim();
+      const name = String(input.name || '').trim();
+      const symbol = String(input.symbol || '').trim().toUpperCase();
+      const description = String(input.description || '').trim();
+      if (!mintPattern.test(mint) || !await accountExists(rpcUrl, mint)) return Response.json({ error: 'The mint account was not found.' }, { status: 400 });
+      if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
+      const mintKey = publicKey(mint);
+      if (!await storedInscriptionTag(rpcUrl, mintKey)) return Response.json({ error: 'No supported image inscription is linked to this mint.' }, { status: 409 });
+      const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
+      const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
+      const address = inscriptionAccount[0].toString();
+      const current = await accountData(rpcUrl, address);
+      if (!current) return Response.json({ error: 'The on-chain metadata inscription was not found.' }, { status: 409 });
+      const encoded = Buffer.from(JSON.stringify({ name, symbol, description }));
+      const value = encoded.length < current.length ? Buffer.concat([encoded, Buffer.alloc(current.length - encoded.length, 32)]) : encoded;
+      for (let offset = 0; offset < value.length; offset += writeChunkBytes) {
+        const chunk = new Uint8Array(value.subarray(offset, offset + writeChunkBytes));
+        const applied = () => chunkMatches(rpcUrl, address, offset, chunk);
+        if (!await applied()) await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: chunk, associatedTag: null, offset }), umi, applied);
+      }
+      const saved = await accountData(rpcUrl, address);
+      if (!saved || !saved.equals(value)) throw new Error('The metadata write did not fully confirm. Try re-uploading it again.');
+      return Response.json({ mint, name, symbol, description, updated: true });
     }
 
     if (input.action === 'finalize') {

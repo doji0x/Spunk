@@ -41,16 +41,22 @@ export default function useInscribedMint(userId) {
       const response = await base44.functions.invoke('mintInscribedNft', { action: 'finalize', mint: pending.mint });
       edition = response.data;
     }
+    await base44.entities.MintRecord.update(pending.mintRecordId, { status: 'success', imageHash: proof.hash, owner: pending.owner, errorMessage: '' });
     clearPending(userId);
     setState({ busy: false, progress: 100, error: '', pending: null, result: { mint: pending.mint, owner: pending.owner, hash: proof.hash, ...edition } });
   };
   const prepare = async pending => {
-    if (pending.prepared) return pending;
-    const { data } = await base44.functions.invoke('mintInscribedNft', { action: 'start', requestId: pending.requestId, mint: pending.mint || undefined, name: pending.name, symbol: pending.symbol, details: pending.details, mimeType: pending.mimeType, totalSize: pending.bytes.length });
-    if (data.error || !data.prepared || !Number.isInteger(data.batchBytes) || data.batchBytes <= 0) throw new Error(data.error || 'Mint preparation did not complete. Resume this attempt.');
-    // Account length can include holes from out-of-order writes. Unknown chunks
-    // are rechecked by the backend, never skipped based on allocated length.
-    const prepared = { ...pending, ...data, offset: pending.offset || 0, confirmedOffsets: pending.confirmedOffsets || [] };
+    let preparedBase = pending;
+    if (!pending.prepared) {
+      const { data } = await base44.functions.invoke('mintInscribedNft', { action: 'start', requestId: pending.requestId, mint: pending.mint || undefined, name: pending.name, symbol: pending.symbol, details: pending.details, mimeType: pending.mimeType, totalSize: pending.bytes.length });
+      if (data.error || !data.prepared || !Number.isInteger(data.batchBytes) || data.batchBytes <= 0) throw new Error(data.error || 'Mint preparation did not complete. Resume this attempt.');
+      // Unknown chunks are rechecked by the backend, never skipped based on allocated length.
+      preparedBase = { ...pending, ...data, offset: pending.offset || 0, confirmedOffsets: pending.confirmedOffsets || [] };
+    }
+    const recordData = { mint: preparedBase.mint, requestId: pending.requestId, name: pending.name, symbol: pending.symbol.toUpperCase(), description: pending.details, owner: preparedBase.owner, status: 'in_progress', errorMessage: '' };
+    const matches = await base44.entities.MintRecord.filter({ requestId: pending.requestId });
+    const record = matches[0] ? await base44.entities.MintRecord.update(matches[0].id, recordData) : await base44.entities.MintRecord.create(recordData);
+    const prepared = { ...preparedBase, mintRecordId: record.id };
     remember(prepared);
     return prepared;
   };
@@ -69,14 +75,21 @@ export default function useInscribedMint(userId) {
       pending = await prepare(pending);
       await append(pending);
     } catch (error) {
-      setState(current => ({ ...current, pending: current.pending || pending, busy: false, error: error.response?.data?.error || error.message || 'Minting stopped. Resume the existing mint instead of creating another.' }));
+      const message = error.response?.data?.error || error.message || 'Minting stopped. Resume the existing mint instead of creating another.';
+      if (pending?.mintRecordId) await base44.entities.MintRecord.update(pending.mintRecordId, { status: 'failed', errorMessage: message });
+      setState(current => ({ ...current, pending: current.pending || pending, busy: false, error: message }));
     } finally { running.current = false; }
   };
   const resume = async () => {
     if (!state.pending || running.current || !userId) return;
     running.current = true;
     setState(current => ({ ...current, busy: true, error: '' }));
-    try { const pending = await prepare(state.pending); await append(pending); } catch (error) { setState(current => ({ ...current, busy: false, error: error.response?.data?.error || error.message || 'The inscription stopped. Try resuming again.' })); }
+    let pending = state.pending;
+    try { pending = await prepare(pending); await append(pending); } catch (error) {
+      const message = error.response?.data?.error || error.message || 'The inscription stopped. Try resuming again.';
+      if (pending?.mintRecordId) await base44.entities.MintRecord.update(pending.mintRecordId, { status: 'failed', errorMessage: message });
+      setState(current => ({ ...current, busy: false, error: message }));
+    }
     finally { running.current = false; }
   };
   return { ...state, start, resume };
