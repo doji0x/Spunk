@@ -35,6 +35,61 @@
     "lastValidBlockHeight": {
       "type": "number"
     },
+    "quoteMint": {
+      "type": "string"
+    },
+    "quoteSymbol": {
+      "type": "string"
+    },
+    "firstBuyAmount": {
+      "type": "string"
+    },
+    "creatorFeeBps": {
+      "type": "number"
+    },
+    "holderReward": {
+      "type": "boolean"
+    },
+    "feeRecipients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "wallet",
+              "github"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "shareBps": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "type",
+          "value",
+          "shareBps"
+        ]
+      }
+    },
+    "feeSharingStatus": {
+      "type": "string",
+      "enum": [
+        "not_requested",
+        "ready",
+        "submitted",
+        "configured",
+        "failed"
+      ],
+      "default": "not_requested"
+    },
+    "feeSharingSignature": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
       "enum": [
