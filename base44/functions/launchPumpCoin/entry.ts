@@ -2,7 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
-import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
+import { Connection, Keypair, PublicKey, Transaction, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
@@ -41,10 +41,15 @@ async function tokenBalance(rpcUrl, owner, mint) {
   const result = await rpcRequest(rpcUrl, 'getTokenAccountsByOwner', [owner, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
   return result.value.reduce((sum, item) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount), 0n);
 }
-function signedTransaction(instructions, latest, wallet, extraSigner = null) {
+function signedTransaction(instructions, latest, wallet) {
+  const tx = new Transaction({ feePayer: wallet.publicKey, ...latest }).add(...instructions);
+  tx.sign(wallet);
+  return tx.serialize().toString('base64');
+}
+function signedVersionedTransaction(instructions, latest, wallet, mint) {
   const message = new TransactionMessage({ payerKey: wallet.publicKey, recentBlockhash: latest.blockhash, instructions }).compileToV0Message();
   const tx = new VersionedTransaction(message);
-  tx.sign(extraSigner ? [wallet, extraSigner] : [wallet]);
+  tx.sign([wallet, mint]);
   return Buffer.from(tx.serialize()).toString('base64');
 }
 
@@ -114,7 +119,7 @@ export default async function(req: Request): Promise<Response> {
     const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
     const launchIxs = await PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const build = units => signedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint);
+    const build = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint);
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [build(500000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
     if (simulation.err) return Response.json({ error: `Create-and-buy simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
     const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
