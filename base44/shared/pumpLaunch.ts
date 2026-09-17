@@ -26,12 +26,18 @@ export async function isLaunched(rpcUrl, coinMint, bondingCurve) {
 
 // Resolves the current on-chain state of a saved attempt. 'expired' means nothing landed and a resend is safe.
 export async function settleAttempt(rpcUrl, attempt) {
-  if (await isLaunched(rpcUrl, attempt.coinMint, attempt.bondingCurve)) return { status: 'confirmed', error: '' };
-  if (!attempt.signature) return { status: 'expired', error: 'The launch was interrupted before its transaction was sent. Resume to send it with the same coin mint.' };
+  const launched = await isLaunched(rpcUrl, attempt.coinMint, attempt.bondingCurve);
+  if (attempt.phase === 'create_pending' && launched) return { status: 'expired', phase: 'buy_ready', error: 'Coin creation confirmed. Resume to submit the first buy.' };
+  if (!['create_pending', 'buy_pending'].includes(attempt.phase) && launched) return { status: 'confirmed', phase: 'complete', error: '' };
+  const retryPhase = attempt.phase === 'buy_pending' ? 'buy_ready' : attempt.phase;
+  if (!attempt.signature) return { status: 'expired', phase: retryPhase, error: 'The transaction was interrupted before it was sent. Resume with the same coin mint.' };
   const state = (await rpcRequest(rpcUrl, 'getSignatureStatuses', [[attempt.signature], { searchTransactionHistory: true }])).value[0];
-  if (state?.err) return { status: 'failed', error: `The launch transaction failed on-chain: ${JSON.stringify(state.err)}. Review it before launching again.` };
-  if (['confirmed', 'finalized'].includes(state?.confirmationStatus)) return { status: 'confirmed', error: '' };
+  if (state?.err) return { status: 'failed', phase: retryPhase, error: `The launch transaction failed on-chain: ${JSON.stringify(state.err)}. Review it before resuming.` };
+  if (['confirmed', 'finalized'].includes(state?.confirmationStatus)) {
+    if (attempt.phase === 'create_pending') return { status: 'expired', phase: 'buy_ready', error: 'Coin creation confirmed. Resume to submit the first buy.' };
+    return { status: 'confirmed', phase: 'complete', error: '' };
+  }
   const height = await rpcRequest(rpcUrl, 'getBlockHeight', [{ commitment: 'confirmed' }]);
-  if (attempt.lastValidBlockHeight && height > attempt.lastValidBlockHeight) return { status: 'expired', error: 'The launch transaction expired before confirming. Resume to resend it with the same coin mint.' };
+  if (attempt.lastValidBlockHeight && height > attempt.lastValidBlockHeight) return { status: 'expired', phase: retryPhase, error: 'The transaction expired before confirming. Resume with the same coin mint.' };
   return { status: 'pending', error: '' };
 }

@@ -35,6 +35,17 @@
     "lastValidBlockHeight": {
       "type": "number"
     },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "atomic_pending",
+        "create_pending",
+        "buy_ready",
+        "buy_pending",
+        "complete"
+      ],
+      "default": "atomic_pending"
+    },
     "quoteMint": {
       "type": "string"
     },

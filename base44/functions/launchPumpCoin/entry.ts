@@ -12,6 +12,7 @@ import { checkMetadataProxy } from './metadataProxy.ts';
 import { walletOwnsInscription } from './ownership.ts';
 
 const minLamports = 30_000_000;
+const token2022Program = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 function atomicAmount(value, decimals) {
   if (typeof value !== 'string' || !/^\d+(\.\d+)?$/.test(value) || Number(value) <= 0) throw new Error('Enter a positive first-buy amount.');
@@ -46,10 +47,10 @@ function signedTransaction(instructions, latest, wallet) {
   tx.sign(wallet);
   return tx.serialize().toString('base64');
 }
-function signedVersionedTransaction(instructions, latest, wallet, mint) {
+function signedVersionedTransaction(instructions, latest, wallet, mint = null) {
   const message = new TransactionMessage({ payerKey: wallet.publicKey, recentBlockhash: latest.blockhash, instructions }).compileToV0Message();
   const tx = new VersionedTransaction(message);
-  tx.sign([wallet, mint]);
+  tx.sign(mint ? [wallet, mint] : [wallet]);
   return Buffer.from(tx.serialize()).toString('base64');
 }
 
@@ -104,10 +105,11 @@ export default async function(req: Request): Promise<Response> {
     const quoteAmount = atomicAmount(input.firstBuyAmount, quote.decimals);
     const mint = await launchMint(walletBytes, user.id, input), coinMint = mint.publicKey.toBase58(), bondingCurve = bondingCurvePda(mint.publicKey).toBase58(), uri = metadataUri(input.inscribedMint);
     let [attempt] = await base44.entities.LaunchAttempt.filter({ requestId: input.requestId });
-    const save = async patch => { const data = { ...patch, checkedAt: new Date().toISOString() }; attempt = attempt ? await base44.entities.LaunchAttempt.update(attempt.id, data) : await base44.entities.LaunchAttempt.create({ requestId: input.requestId, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, metadataUri: uri, signature: '', quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, feeSharingStatus: recipients.length ? 'ready' : 'not_requested', ...data }); return attempt; };
+    const save = async patch => { const data = { ...patch, checkedAt: new Date().toISOString() }; attempt = attempt ? await base44.entities.LaunchAttempt.update(attempt.id, data) : await base44.entities.LaunchAttempt.create({ requestId: input.requestId, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, metadataUri: uri, signature: '', phase: 'atomic_pending', quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, feeSharingStatus: recipients.length ? 'ready' : 'not_requested', ...data }); return attempt; };
     if (attempt?.status === 'confirmed') return Response.json({ attempt, safeToEdit: false });
     if (attempt?.status === 'pending') { await save(await settleAttempt(rpcUrl, attempt)); if (attempt.status !== 'expired') return Response.json({ attempt, safeToEdit: false }); }
-    if (await isLaunched(rpcUrl, coinMint, bondingCurve)) return Response.json({ attempt: await save({ status: 'confirmed', error: '' }), safeToEdit: false });
+    const launched = await isLaunched(rpcUrl, coinMint, bondingCurve);
+    if (launched && attempt && !['create_pending', 'buy_ready', 'buy_pending'].includes(attempt.phase)) return Response.json({ attempt: await save({ status: 'confirmed', phase: 'complete', error: '' }), safeToEdit: false });
     const proof = await verifyInscription(input.inscribedMint);
     if (proof.status !== 'valid' || !await walletOwnsInscription(rpcUrl, wallet.publicKey.toBase58(), input.inscribedMint, proof)) return Response.json({ error: proof.reason || proof.message || 'The mint wallet does not control a valid inscription.', safeToEdit }, { status: 422 });
     const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
@@ -116,16 +118,45 @@ export default async function(req: Request): Promise<Response> {
     if (lamports < minLamports + (pair.symbol === 'SOL' ? Number(quoteAmount.toString()) : 0)) return Response.json({ error: 'The mint wallet lacks SOL for the first buy, rent, and fees.', safeToEdit }, { status: 422 });
     if (pair.symbol !== 'SOL' && await tokenBalance(rpcUrl, wallet.publicKey.toBase58(), input.quoteMint) < BigInt(quoteAmount.toString())) return Response.json({ error: `The mint wallet lacks ${pair.symbol} for the first buy.`, safeToEdit }, { status: 422 });
     const feeConfig = await onlineSdk.fetchFeeConfig(), quoteControl = await onlineSdk.fetchQuoteControl(), fee = input.creatorFeeBps ? new BN(input.creatorFeeBps) : undefined;
+    const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
+
+    if (launched) {
+      const buyState = await onlineSdk.fetchBuyState(mint.publicKey, wallet.publicKey, token2022Program, quote.mint);
+      const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: buyState.bondingCurve, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
+      const buyIxs = await PUMP_SDK.buyV2Instructions({ global, bondingCurveAccountInfo: buyState.bondingCurveAccountInfo, bondingCurve: buyState.bondingCurve, associatedUserAccountInfo: buyState.associatedUserAccountInfo, mint: mint.publicKey, user: wallet.publicKey, amount, quoteAmount, slippage: 0, tokenProgram: token2022Program, quoteTokenProgram: quote.quoteTokenProgram });
+      const buildBuy = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...buyIxs], latest, wallet);
+      const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [buildBuy(300000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
+      if (simulation.err) return Response.json({ error: `First-buy simulation failed: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
+      if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, phase: 'buy', logs: simulation.logs, safeToEdit });
+      safeToEdit = false; await save({ status: 'pending', phase: 'buy_pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
+      try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [buildBuy(Math.min(1400000, Math.max(300000, Math.ceil((simulation.unitsConsumed || 240000) * 1.2)))), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
+      catch (error) { await save({ status: 'expired', phase: 'buy_ready', error: `First buy sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
+    }
+
     const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
     const launchIxs = await PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
-    const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const build = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint);
-    const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [build(500000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
+    const atomicIxs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
+    let atomicTransaction = null;
+    try { atomicTransaction = signedVersionedTransaction(atomicIxs, latest, wallet, mint); }
+    catch (error) { if (!/encoding overruns|too large|Transaction too large/i.test(error.message)) throw error; }
+
+    if (!atomicTransaction) {
+      const createIx = await PUMP_SDK.createV2Instruction({ mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
+      const buildCreate = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), createIx], latest, wallet, mint);
+      const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [buildCreate(300000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
+      if (simulation.err) return Response.json({ error: `Coin-creation simulation failed: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
+      if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, phase: 'create', logs: simulation.logs, safeToEdit });
+      safeToEdit = false; await save({ status: 'pending', phase: 'create_pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
+      try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [buildCreate(Math.min(1400000, Math.max(300000, Math.ceil((simulation.unitsConsumed || 240000) * 1.2)))), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
+      catch (error) { await save({ status: 'expired', phase: 'create_pending', error: `Coin creation sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
+    }
+
+    const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [atomicTransaction, { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
     if (simulation.err) return Response.json({ error: `Create-and-buy simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
     const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
     if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, units, logs: simulation.logs, safeToEdit });
-    safeToEdit = false; await save({ status: 'pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
-    try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [build(units), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ status: 'pending', signature }); return Response.json({ attempt, safeToEdit }); }
-    catch (error) { if (await isLaunched(rpcUrl, coinMint, bondingCurve)) return Response.json({ attempt: await save({ status: 'confirmed', error: '' }), safeToEdit }); await save({ status: 'expired', error: `Sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
+    safeToEdit = false; await save({ status: 'pending', phase: 'atomic_pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
+    try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
+    catch (error) { if (await isLaunched(rpcUrl, coinMint, bondingCurve)) return Response.json({ attempt: await save({ status: 'confirmed', phase: 'complete', error: '' }), safeToEdit }); await save({ status: 'expired', error: `Sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
   } catch (error) { return Response.json({ error: error.message || 'Unable to complete the launch.', safeToEdit }, { status: 500 }); }
 }
