@@ -16,7 +16,7 @@ export default function AdminMint() {
   return <main className="validate-surface min-h-screen px-5 py-10 text-[#252b20]">
     <div className="mx-auto max-w-2xl"><Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-[#657456]"><ArrowLeft size={16} />Back to validator</Link>
       <div className="mb-7 flex items-start gap-3"><span className="rounded-full bg-[#edf2e6] p-2 text-[#66834a]"><ShieldCheck size={20} /></span><div className="flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-[10px] tracking-widest text-[#66834a]">ADMIN · SOLANA MAINNET</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Mint an inscribed NFT</h1></div><Link to="/admin/mints" className="inline-flex items-center gap-2 text-sm text-[#66834a] underline"><History size={16} />Recent mints</Link></div><p className="mt-2 text-sm leading-6 text-[#7e8773]">Creates one NFT owned by the server mint wallet and writes its metadata and complete image bytes directly on-chain. No Arweave, IPFS, or external image URL is used.</p></div></div>
-      <MintForm onMint={mint.start} busy={mint.busy} /><MintStatus {...mint} onResume={mint.resume} />
+      <MintForm onMint={mint.start} busy={mint.busy} pending={mint.pending} onResume={mint.resume} /><MintStatus {...mint} onResume={mint.resume} />
       <PumpLaunchPanel inscriptionBusy={mint.busy} />
     </div>
   </main>;

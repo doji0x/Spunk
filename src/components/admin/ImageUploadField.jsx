@@ -12,11 +12,17 @@ const matchesType = (bytes, type) => {
   return false;
 };
 
-export default function ImageUploadField({ disabled, onFileChange }) {
+export default function ImageUploadField({ disabled, onFileChange, restoredFile }) {
   const [preview, setPreview] = useState('');
   const [fileInfo, setFileInfo] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(() => {
+    if (!restoredFile) return;
+    setError('');
+    setFileInfo(restoredFile);
+    setPreview(URL.createObjectURL(restoredFile));
+  }, [restoredFile]);
 
   const selectFile = async event => {
     const file = event.target.files?.[0];

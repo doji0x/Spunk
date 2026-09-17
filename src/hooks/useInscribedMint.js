@@ -68,7 +68,7 @@ export default function useInscribedMint(userId) {
     try {
       if (!values.file || values.file.size < 1 || values.file.size > 1024 * 1024) throw new Error('The image must be 1 MB or smaller.');
       const bytes = new Uint8Array(await values.file.arrayBuffer());
-      pending = { requestId: crypto.randomUUID(), mint: values.mint?.trim() || '', name: values.name, symbol: values.symbol, details: values.details, bytes, mimeType: values.file.type, offset: 0, confirmedOffsets: [], prepared: false };
+      pending = { requestId: values.requestId || crypto.randomUUID(), mint: values.mint?.trim() || '', name: values.name, symbol: values.symbol, details: values.details, bytes, fileName: values.file.name, mimeType: values.file.type, offset: 0, confirmedOffsets: [], prepared: false };
       // Save the image and stable mint request before any transaction is sent.
       savePending(pending, userId, true);
       setState(current => ({ ...current, pending }));
