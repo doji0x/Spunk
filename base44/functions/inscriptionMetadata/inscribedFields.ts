@@ -1,27 +1,25 @@
 import { Buffer } from 'node:buffer';
 
 function pick(source) {
-  const name = String(source?.name || '').slice(0, 32);
-  const symbol = String(source?.symbol || '').slice(0, 10);
-  const description = String(source?.description || '').slice(0, 1000);
-  return name && symbol ? { name, symbol, description } : null;
+  const fields = {};
+  for (const [key, limit] of [['name', 32], ['symbol', 10], ['description', 1000]]) {
+    if (typeof source?.[key] === 'string') fields[key] = source[key].slice(0, limit);
+  }
+  return fields;
 }
 
-// Primary source is the JSON written to the root inscription account; the Metaplex gateway is only a fallback.
-export async function inscribedFields(rootAccount, root) {
+// On-chain fields always win. Raw inscriptions must be self-contained; only legacy JSON may use the gateway.
+export async function inscribedFields(rootAccount, root, allowLegacyFallback = false) {
+  let onChain = {};
   if (rootAccount?.data?.[0]) {
-    const text = Buffer.from(rootAccount.data[0], 'base64').toString('utf8');
-    const end = text.lastIndexOf('}');
-    if (end > 0) {
-      try {
-        const fields = pick(JSON.parse(text.slice(0, end + 1)));
-        if (fields) return fields;
-      } catch { /* fall through to the gateway */ }
-    }
+    const text = Buffer.from(rootAccount.data[0], 'base64').toString('utf8').replace(/\0+$/, '').trim();
+    try { onChain = pick(JSON.parse(text)); } catch { /* Missing or incomplete root JSON. */ }
+    if (onChain.name && onChain.symbol) return { description: '', ...onChain };
   }
+  if (!allowLegacyFallback) throw new Error('The raw inscription must contain its name and symbol in on-chain JSON; no gateway fallback is allowed.');
   const response = await fetch(`https://igw.metaplex.com/mainnet/${root}`, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
-  if (!response.ok) throw new Error('The inscription metadata could not be read on-chain or from the gateway.');
-  const fields = pick(await response.json());
-  if (!fields) throw new Error('The inscription metadata has no name or symbol.');
+  if (!response.ok) throw new Error('The legacy inscription metadata could not be read on-chain or from the gateway.');
+  const fields = { description: '', ...pick(await response.json()), ...onChain };
+  if (!fields.name || !fields.symbol) throw new Error('The inscription metadata has no name or symbol.');
   return fields;
 }

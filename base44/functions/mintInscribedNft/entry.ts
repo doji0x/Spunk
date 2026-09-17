@@ -3,6 +3,7 @@ import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
 import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash } from '../../shared/mintWallet.ts';
 import { recoverableMintSigner, chunkMatches } from './recovery.ts';
+import { mintInscriptionFormat, storedInscriptionTag } from './inscriptionFormat.ts';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
 import 'npm:@metaplex-foundation/umi@0.9.2/serializers';
@@ -117,9 +118,10 @@ export default async function(req: Request): Promise<Response> {
       const mintAddress = mintKey.toString();
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
-      const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
-      const uri = `https://igw.metaplex.com/mainnet/${inscriptionAccount[0]}`;
-      if (mintSigner && !await accountExists(rpcUrl, mintAddress)) {
+      const mintExists = await accountExists(rpcUrl, mintAddress);
+      const { tag, uri } = await mintInscriptionFormat(umi, rpcUrl, mintKey, mintExists);
+      const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: tag, inscriptionMetadataAccount });
+      if (mintSigner && !mintExists) {
         await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Limited', fields: [1n] } }), umi, () => accountExists(rpcUrl, mintAddress));
       }
       if (!await tokenHasSupply(rpcUrl, mintAddress)) {
@@ -132,7 +134,7 @@ export default async function(req: Request): Promise<Response> {
         const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
         const builder = new TransactionBuilder()
           .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
-          .add(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: 'image' }));
+          .add(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: tag }));
         await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       }
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
@@ -195,7 +197,9 @@ export default async function(req: Request): Promise<Response> {
       const mintKey = publicKey(mint);
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
-      const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'image', inscriptionMetadataAccount });
+      const tag = await storedInscriptionTag(rpcUrl, mintKey);
+      if (!tag) return Response.json({ error: 'No supported inscription is initialized. Resume preparation before writing bytes.' }, { status: 409 });
+      const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: tag, inscriptionMetadataAccount });
       const imageAddress = associatedInscriptionAccount[0].toString();
       const value = new Uint8Array(bytes.subarray(0, writeChunkBytes));
       const writtenEnd = offset + value.length;
@@ -203,7 +207,7 @@ export default async function(req: Request): Promise<Response> {
       // Length alone is not proof that this particular chunk was applied.
       const applied = () => chunkMatches(rpcUrl, imageAddress, offset, value);
       if (!await applied()) {
-        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value, associatedTag: 'image', offset }), umi, applied);
+        await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value, associatedTag: tag, offset }), umi, applied);
       }
       if (!await applied()) throw new Error('The image chunk has not confirmed yet. Retry this offset.');
       return Response.json({ nextOffset: writtenEnd, complete: writtenEnd === totalSize });

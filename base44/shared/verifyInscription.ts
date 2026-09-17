@@ -1,7 +1,7 @@
 import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { Buffer } from 'node:buffer';
 import { solanaRpc, indexedAsset } from './solanaServices.ts';
-import { programAddress, derive, linkedMint, resolveIndexedMint, decodeMetadata, imageAddress } from './inscriptionMetadata.ts';
+import { programAddress, derive, linkedMint, resolveIndexedMint, decodeMetadata, associatedAddress, inscriptionTag } from './inscriptionMetadata.ts';
 import { detectImageMime } from './imageMime.ts';
 
 export async function verifyInscription(address) {
@@ -53,8 +53,9 @@ export async function verifyInscription(address) {
       if (!metadata || metadata.inscriptionAccount !== roots[i]) continue;
       // Earlier mint inscriptions omit the optional mint field. Their canonical mint-derived PDAs still prove linkage.
       if (metadata.mint?.__option === 'Some' ? metadata.mint.value !== mints[i] : metadata.key !== 2) continue;
-      if (!metadata.associatedInscriptions.some(a => a.tag === 'image')) continue;
-      findings.push({ mint: mints[i], root: roots[i], metadata: metadataKeys[i], imageAccount: imageAddress(metadataKeys[i]), immutable: metadata.updateAuthorities.length === 0, updateAuthorities: metadata.updateAuthorities.map(a => a.toString()) });
+      const tag = inscriptionTag(metadata);
+      if (!tag) continue;
+      findings.push({ mint: mints[i], root: roots[i], metadata: metadataKeys[i], tag, imageAccount: associatedAddress(metadataKeys[i], tag), immutable: metadata.updateAuthorities.length === 0, updateAuthorities: metadata.updateAuthorities.map(a => a.toString()) });
     }
     if (!findings.length) return { status: 'invalid', reason: 'No token-linked image inscription was found under the supported Metaplex standard. Other inscription protocols are not checked.' };
     if (findings.length > 1) return { status: 'unknown', message: 'This transaction includes more than one inscribed token. Paste the specific token mint address to choose which image to verify.' };

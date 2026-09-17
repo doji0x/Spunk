@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { solanaRpc } from '../../shared/solanaServices.ts';
-import { programAddress, derive, decodeMetadata, imageAddress } from '../../shared/inscriptionMetadata.ts';
+import { programAddress, derive, decodeMetadata, associatedAddress, inscriptionTag } from '../../shared/inscriptionMetadata.ts';
 import { detectImageMime } from '../../shared/imageMime.ts';
 import { imageUri } from '../../shared/pumpLaunch.ts';
 import { inscribedFields } from './inscribedFields.ts';
@@ -28,17 +28,21 @@ export default async function(req: Request): Promise<Response> {
     const root = derive(mint);
     const metadataKey = derive(root);
     const metadata = decodeMetadata(await account(metadataKey));
-    if (!metadata || metadata.inscriptionAccount !== root || !metadata.associatedInscriptions.some(a => a.tag === 'image')) return Response.json({ error: 'No Metaplex image inscription is linked to this mint.' }, { status: 404 });
+    const tag = inscriptionTag(metadata);
+    const linked = metadata && metadata.inscriptionAccount === root && (metadata.mint?.__option === 'Some' ? metadata.mint.value === mint : metadata.key === 2);
+    if (!linked || !tag) return Response.json({ error: 'No supported raw-data or image inscription is linked to this mint.' }, { status: 404 });
     if (asset === 'image') {
-      const image = await account(imageAddress(metadataKey));
-      if (!image || image.owner !== programAddress) return Response.json({ error: 'The inscribed image account was not found.' }, { status: 404 });
+      const image = await account(associatedAddress(metadataKey, tag));
+      if (!image || image.executable || image.owner !== programAddress) return Response.json({ error: 'The inscribed image account was not found.' }, { status: 404 });
       if (image.space > 5 * 1024 * 1024) return Response.json({ error: 'The inscribed image exceeds 5 MB.' }, { status: 413 });
       const bytes = Buffer.from(image.data[0], 'base64');
       const mime = detectImageMime(bytes);
       if (!mime) return Response.json({ error: 'The inscribed bytes are not a supported image.' }, { status: 415 });
       return remember(cacheKey, bytes, { ...headers, 'content-type': mime, 'content-length': String(bytes.length) });
     }
-    const fields = await inscribedFields(await account(root), root);
+    const rootAccount = await account(root);
+    if (!rootAccount || rootAccount.executable || rootAccount.owner !== programAddress) return Response.json({ error: 'The root inscription account was not found.' }, { status: 404 });
+    const fields = await inscribedFields(rootAccount, root, tag === 'image');
     return remember(cacheKey, JSON.stringify({ ...fields, image: imageUri(mint), showName: true, createdOn: 'https://pump.fun' }), { ...headers, 'content-type': 'application/json' });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to serve inscription metadata.' }, { status: 500 });

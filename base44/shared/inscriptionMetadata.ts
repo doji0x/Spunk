@@ -28,6 +28,13 @@ export async function resolveIndexedMint(key, account) {
   const candidates = await inscriptionHistoryAccounts(key);
   return candidates.find(mint => derive(mint) === metadata.inscriptionAccount) || null;
 }
+export function inscriptionTag(metadata) {
+  const tags = metadata?.associatedInscriptions || [];
+  return ['raw', 'image'].find(tag => tags.some(entry => entry.tag === tag)) || null;
+}
+export function associatedAddress(metadataKey, tag) {
+  return PublicKey.findProgramAddressSync([Buffer.from('Inscription'), Buffer.from('Association'), Buffer.from(tag), new PublicKey(metadataKey).toBuffer()], new PublicKey(programAddress))[0].toBase58();
+}
 export function imageAddress(metadataKey) {
-  return PublicKey.findProgramAddressSync([Buffer.from('Inscription'), Buffer.from('Association'), Buffer.from('image'), new PublicKey(metadataKey).toBuffer()], new PublicKey(programAddress))[0].toBase58();
+  return associatedAddress(metadataKey, 'image');
 }
