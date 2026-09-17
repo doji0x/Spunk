@@ -1,10 +1,13 @@
 # Validate
 
-> **Less trust. More truth.** Inscribe images on Solana with Metaplex on transaction version 1—and prove the bytes are really there.
+> **Less trust. More truth.** Inscribe images on Solana, verify the bytes are really there, and launch pump.fun coins with metadata that can evolve after launch.
 
-**Flagship: inscribing on V1 with Metaplex.** Validate's primary product is a permanent, wallet-based inscription pipeline: upload an image, write its bytes on-chain in ordered version 1 transactions through the Metaplex inscription program, and finalize a single-supply NFT whose image lives entirely in Solana account data. No gateways, no IPFS, no hosted URLs. Every inscription is hash-verified against the uploaded file before it is called done. See [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex).
+Validate combines two capabilities built on the same on-chain inscription foundation:
 
-Verification is the proof layer beneath it. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
+1. **Inscribe and verify images on-chain.** Upload an image, write its bytes on-chain in ordered version 1 transactions through the Metaplex inscription program, and finalize a single-supply NFT whose image lives entirely in Solana account data. Every inscription is read back and hash-verified before it is called complete. See [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex).
+2. **Launch pump.fun coins with mutable, on-chain-anchored metadata.** The coin's URI points to Validate's resolver, which reads the current source inscription state. While the controlled source inscription remains updateable, its image, name, ticker, and description can change without replacing the launched coin. See [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins).
+
+Verification is the proof layer beneath both capabilities. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
 
 - **Metaplex inscriptions** (`mpl-inscription`)
 - **LibrePlex inscriptions**, including `InscriptionV3`
@@ -16,6 +19,7 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 ## Table of Contents
 
 - [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex)
+- [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins)
 - [Purpose](#purpose)
 - [Features](#features)
 - [Supported Standards](#supported-standards)
@@ -222,6 +226,45 @@ A mismatch is a hard failure: the run stops and explicitly instructs the operato
 | Digest mismatch | Stop and resume the same mint; a new mint would orphan paid-for chain data |
 | `maxSupply` cannot be set to 1 | The image stays verifiable; only the edition cannot be finalized on that mint |
 
+## Mutable On-Chain Metadata for pump.fun Coins
+
+Standard token launches commonly point to content-addressed or otherwise fixed metadata. That is useful for permanence, but it prevents a creator from changing the displayed image, name, ticker, or description after launch.
+
+Validate introduces a different model: **a stable coin URI backed by controlled, on-chain inscription data**.
+
+### How it works
+
+1. An image and its descriptive metadata are written into a source inscription on Solana.
+2. A pump.fun coin is launched with a URI pointing to Validate's public `inscriptionMetadata` resolver.
+3. The resolver reads the current on-chain state of the source inscription and returns pump.fun-compatible metadata.
+4. While the admin mint wallet retains the required inscription authority, the source image bytes or metadata can be rewritten.
+5. Consumers that fetch the stable URI receive the latest verified inscription state without any change to the coin's mint address.
+
+The current resolver URI has this form:
+
+```text
+https://solvalidate.base44.app/functions/inscriptionMetadata?mint=<inscribedMint>
+```
+
+### What can change
+
+| Served by the inscription-backed URI | Controlled by the launched coin |
+| --- | --- |
+| Image | Coin mint address |
+| Name | Token supply and program state |
+| Ticker / symbol | Bonding curve |
+| Description | Launch transaction history |
+
+This does not rewrite the pump.fun coin account. It changes the metadata returned by the coin's existing URI, with the latest values still anchored in the controlled on-chain inscription.
+
+### Authority is the key constraint
+
+Post-launch editing is possible only while the operator retains the authority required to update the source inscription. Permanently transferring or relinquishing that control freezes the source and ends the ability to make further metadata changes. This creates a deliberate choice between an evolving metadata source and a permanently locked artifact.
+
+### Production durability
+
+The launched URI is a long-lived dependency. Before treating it as permanent infrastructure, the resolver should use a stable custom domain controlled by the project rather than relying indefinitely on the current hosted app address.
+
 ## How Verification Works
 
 1. **Validate the input** — accept a Base58 Solana mint address or transaction signature.
@@ -292,7 +335,8 @@ Server-side providers
 | Styling | Tailwind CSS, shadcn/ui, Lucide icons |
 | Data fetching | Base44 SDK, TanStack Query |
 | Backend | Base44 serverless functions running TypeScript |
-| Solana decoding | `@solana/web3.js`, Metaplex `mpl-inscription` v0.8.1 |
+| Solana decoding and inscription writes | `@solana/web3.js`, Metaplex `mpl-inscription` v0.8.1 |
+| pump.fun launches | `@pump-fun/pump-sdk` v2 create-and-buy and fee-sharing instructions |
 | Network | Solana mainnet |
 | RPC and indexing | Private Solana RPC and Helius |
 
@@ -302,39 +346,50 @@ Server-side providers
 - **Standards remain independent.** One valid path does not suppress the evidence from the other checks.
 - **Ambiguity is visible.** Provider failures and inconclusive structures return `unknown`, not a false negative.
 - **Credentials stay server-side.** RPC and indexing secrets are never included in browser code.
-- **Verification is read-only.** The app does not connect wallets, request signatures, or move assets.
+- **Public verification is read-only.** Authenticated admin workflows separately sign inscription and launch transactions with the configured mint wallet.
 
 ## Project Structure
 
 ```text
 src/
 ├── pages/
-│   └── Home.jsx                         # Main verification experience
+│   ├── Home.jsx                         # Public verification experience
+│   └── AdminMint.jsx                    # Admin inscription and launch console
 ├── components/
 │   ├── ValidationForm.jsx               # Address input and client validation
 │   ├── ValidationResult.jsx             # Combined four-check result
-│   ├── StandardCheck.jsx                # Evidence card for one standard
-│   ├── InscriptionExamples.jsx          # Paginated verified examples
-│   ├── ValidationAbout.jsx              # Methodology and limitations
-│   ├── ValidationExplainer.jsx          # User-facing verification flow
-│   └── ValidateHeader.jsx               # Brand and network status
+│   └── admin/
+│       ├── MintForm.jsx                 # Inscription details and image input
+│       ├── MintStatus.jsx               # Progress and recovery controls
+│       ├── PumpLaunchPanel.jsx           # pump.fun launch form
+│       ├── AdvancedLaunchOptions.jsx     # Guided market and fee settings
+│       ├── PairAssetSelect.jsx           # Supported pair selector
+│       ├── FeeShareEditor.jsx            # Custom fee allocation
+│       └── PumpLaunchResult.jsx          # Launch status and next actions
+├── hooks/
+│   ├── useInscribedMint.js              # Resumable inscription lifecycle
+│   └── usePumpLaunch.js                 # Launch-attempt lifecycle
 └── api/
-    └── base44Client.js                   # Preconfigured Base44 SDK client
+    └── base44Client.js                  # Preconfigured Base44 SDK client
 
 base44/
 ├── functions/
-│   ├── validateInscription/
-│   │   └── entry.ts                     # Public validation endpoint
-│   └── findInscriptionExamples/
-│       └── entry.ts                     # Verified discovery endpoint
+│   ├── validateInscription/             # Public validation endpoint
+│   ├── findInscriptionExamples/         # Verified discovery endpoint
+│   ├── inscriptionMetadata/             # Metadata and image resolver
+│   ├── mintInscribedNft/                # Admin inscription pipeline
+│   ├── launchPumpCoin/                  # Admin pump.fun launch endpoint
+│   └── confirmLaunches/                 # Pending-launch settlement
+├── workflows/
+│   └── Confirm Pump Launches.jsonc      # Scheduled confirmation
 └── shared/
-    ├── verifyAllInscriptions.ts          # Combined result orchestration
-    ├── verifyInscription.ts              # Metaplex verification
-    ├── verifyLibreplex.ts                # LibrePlex legacy/V3 verification
-    ├── v1Transaction.ts                  # Versioned transaction image parser
-    ├── verifyHeldInscription.ts          # Inscriptions held by a token address
-    ├── inscriptionMetadata.ts            # Metaplex PDA and metadata utilities
-    └── solanaServices.ts                 # Solana and Helius service access
+    ├── verifyAllInscriptions.ts         # Combined verification orchestration
+    ├── verifyInscription.ts             # Metaplex verification
+    ├── verifyLibreplex.ts               # LibrePlex verification
+    ├── v1Transaction.ts                 # Versioned transaction parser
+    ├── mintWallet.ts                    # Admin signer and network checks
+    ├── pumpLaunch.ts                    # Stable mint and settlement helpers
+    └── pumpPairs.ts                     # Supported pair catalog
 ```
 
 ## Local Development
@@ -380,9 +435,11 @@ Configure secrets in the Base44 app's **Secrets** settings. Never add secret val
 
 | Secret | Purpose |
 | --- | --- |
-| `SOLANA_RPC_URL` | Private Solana mainnet JSON-RPC endpoint used for finalized account and transaction reads. |
+| `SOLANA_RPC_URL` | Private Solana mainnet JSON-RPC endpoint used for finalized reads, inscription writes, and launches. |
+| `SOLANA_RPC_URL_DEVNET` | Optional Solana devnet endpoint used for non-launch development. |
 | `INSCRIPTION_API_URL` | Helius-compatible RPC/indexing endpoint used for discovery and historical resolution. |
 | `INSCRIPTION_API_KEY` | Credential for the inscription/indexing endpoint. |
+| `MINT_WALLET_SECRET_KEY` | Admin mint-wallet key used to sign inscription writes and pump.fun launches and retain control of editable sources. |
 
 Both configured providers must target Solana mainnet. Example discovery verifies the mainnet genesis hash before scanning accounts.
 
@@ -390,62 +447,27 @@ Both configured providers must target Solana mainnet. Example discovery verifies
 
 ### `validateInscription`
 
-Verifies a mint address or transaction signature.
+Verifies a mint address or transaction signature and returns independent evidence for each supported inscription path.
 
-Request:
+### `inscriptionMetadata`
 
-```json
-{
-  "address": "<solana-mint-or-transaction-signature>"
-}
-```
+Public metadata and image resolver used by launched coins. It validates the requested source inscription, reads current on-chain data, and returns either pump.fun-compatible JSON metadata or verified image bytes. Bounded in-memory caching and per-IP rate limiting reduce repeated RPC work.
 
-Representative response shape:
+### `mintInscribedNft`
 
-```json
-{
-  "status": "valid",
-  "standard": "LibrePlex Inscription",
-  "mint": "<mint-address>",
-  "image": "data:image/png;base64,...",
-  "hash": "<sha256-hex>",
-  "checkedAt": "<iso-8601-timestamp>",
-  "checks": {
-    "metaplex": { "status": "invalid" },
-    "v1": { "status": "invalid" },
-    "libreplex": { "status": "valid" },
-    "held": { "status": "invalid" }
-  }
-}
-```
+Admin-only, resumable inscription pipeline. It prepares the Metaplex NFT and inscription accounts, writes image bytes in ordered chunks, verifies the completed image, finalizes the single-supply edition, and supports recovery on the same mint.
 
-Valid proof objects can additionally include protocol-specific account addresses, MIME type, byte length, authority/immutability information, confidence, transaction signature, and indexer context.
+### `launchPumpCoin`
+
+Admin-only pump.fun V2 launch endpoint. It verifies the source inscription and admin control, checks that the public resolver is ready, derives a retry-stable coin mint, and creates and buys the coin. The guided launch supports pump.fun-enabled pair assets, configurable creator fees, holder rewards, and post-launch fee-sharing configuration.
+
+### `confirmLaunches`
+
+Settles pending launch records against Solana account, signature, and block-height state. It is designed to run through the scheduled confirmation workflow rather than hold a server request open while a transaction settles.
 
 ### `findInscriptionExamples`
 
-Discovers candidate image inscriptions from paginated Metaplex and LibrePlex program accounts, then performs full verification before returning anything to the client.
-
-Request:
-
-```json
-{
-  "cursor": null
-}
-```
-
-Pass the returned cursor unchanged to request the next page:
-
-```json
-{
-  "cursor": {
-    "metaplexKind": 2,
-    "metaplexKey": "<pagination-key-or-null>",
-    "libreplexKey": "<pagination-key-or-null>"
-  }
-}
-```
-
-Only `valid` results become clickable examples. The response also reports how many program accounts were scanned and how many candidate checks remained inconclusive.
+Discovers candidate Metaplex and LibrePlex image inscriptions, performs full verification, and returns only valid examples with a cursor for continued discovery.
 
 ## Build and Quality Checks
 
@@ -488,8 +510,8 @@ Repository synchronization does not publish the application automatically. Until
 - Images larger than 5 MB are not rendered by the account-based verifiers.
 - Image status is established from byte signatures and complete file boundaries, not untrusted MIME metadata alone.
 - Submitted addresses and signatures are already public blockchain identifiers.
-- The app never requests seed phrases, private keys, wallet connections, or transaction signatures.
-- The verifier performs no writes to Solana and never takes custody of assets.
+- The public verifier never requests seed phrases, private keys, wallet connections, or transaction signatures.
+- Verification performs no writes to Solana; authenticated admin minting and launch actions are separate, explicit workflows.
 
 ## Scope and Limitations
 
