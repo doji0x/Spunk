@@ -7,9 +7,6 @@ import { inscribedFields } from './inscribedFields.ts';
 import { cached, remember, rateLimited } from './guard.ts';
 
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const testImageOverrides = {
-  DtDsqgm6PnL4xAjjraP53nVnBNHw7DSZYBr3F5YMu2QS: 'https://media.base44.com/images/public/6aa8d3c82020abebe308c467/2f05c89c7_IMG_1888.jpeg'
-};
 // Inscriptions rarely change; a long shared max-age lets CDNs and marketplaces serve repeats without hitting this function.
 const headers = { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400', 'access-control-allow-origin': '*' };
 
@@ -24,18 +21,10 @@ export default async function(req: Request): Promise<Response> {
     const mint = (url.searchParams.get('mint') || '').trim();
     if (!mintPattern.test(mint)) return Response.json({ error: 'Provide a valid inscribed mint address.' }, { status: 400 });
     const asset = url.searchParams.get('asset') === 'image' ? 'image' : 'json';
-    const overrideImage = testImageOverrides[mint];
     const cacheKey = `${mint}:${asset}`;
-    if (!overrideImage) {
-      const hit = cached(cacheKey);
-      if (hit) return hit;
-    }
+    const hit = cached(cacheKey);
+    if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
-    if (asset === 'image' && overrideImage) {
-      const replacement = await fetch(overrideImage, { signal: AbortSignal.timeout(8000) });
-      if (!replacement.ok) return Response.json({ error: 'The temporary replacement image is unavailable.' }, { status: 502 });
-      return new Response(await replacement.arrayBuffer(), { headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store', 'content-type': replacement.headers.get('content-type') || 'image/jpeg' } });
-    }
     const root = derive(mint);
     const metadataKey = derive(root);
     const metadata = decodeMetadata(await account(metadataKey));
