@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 
 const storageKey = 'validate:pump-launch:v3';
 const solMint = 'So11111111111111111111111111111111111111112';
-const empty = { inscribedMint: '', name: '', symbol: '', quoteMint: solMint, firstBuyAmount: '', creatorFeePercent: '', holderReward: false, feeRecipients: [] };
+const empty = { inscribedMint: '', name: '', symbol: '', quoteMint: solMint, firstBuyAmount: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [] };
 
 export default function usePumpLaunch() {
   const [pointer, setPointer] = useState(() => JSON.parse(localStorage.getItem(storageKey) || 'null'));

@@ -28,9 +28,10 @@ function parseRecipients(value, holderReward) {
   const seen = new Set();
   for (const item of recipients) {
     if (!Number.isInteger(item.shareBps) || item.shareBps < 1 || item.shareBps > 10000) throw new Error('Every fee recipient needs a positive share.');
+    if (item.type === 'creator') item.value = 'Creator';
     if (item.type === 'wallet' && !addressPattern.test(item.value)) throw new Error('Enter a valid Solana wallet recipient.');
     if (item.type === 'github' && !/^\d{1,20}$/.test(item.value)) throw new Error('GitHub recipients require a numeric GitHub user ID.');
-    if (!['wallet', 'github'].includes(item.type) || seen.has(`${item.type}:${item.value}`)) throw new Error('Fee recipients must be unique wallet or GitHub recipients.');
+    if (!['creator', 'wallet', 'github'].includes(item.type) || seen.has(`${item.type}:${item.value}`)) throw new Error('Fee recipients must be unique creator, wallet, or GitHub recipients.');
     seen.add(`${item.type}:${item.value}`);
   }
   return recipients;
@@ -73,7 +74,8 @@ export default async function(req: Request): Promise<Response> {
       const quote = await onlineSdk.resolveQuoteMint(new PublicKey(attempt.quoteMint));
       const shareholders = [], socialCreates = [];
       for (const recipient of recipients) {
-        if (recipient.type === 'wallet') shareholders.push({ address: new PublicKey(recipient.value), shareBps: recipient.shareBps });
+        if (recipient.type === 'creator') shareholders.push({ address: wallet.publicKey, shareBps: recipient.shareBps });
+        else if (recipient.type === 'wallet') shareholders.push({ address: new PublicKey(recipient.value), shareBps: recipient.shareBps });
         else { const address = socialFeePda(recipient.value, Platform.GitHub); shareholders.push({ address, shareBps: recipient.shareBps }); if (!await accountExists(rpcUrl, address.toBase58())) socialCreates.push(await PUMP_SDK.createSocialFeePda({ payer: wallet.publicKey, userId: recipient.value, platform: Platform.GitHub })); }
       }
       const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 600000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), await PUMP_SDK.createFeeSharingConfig({ creator: wallet.publicKey, mint, pool: null }), ...socialCreates, await PUMP_SDK.updateFeeSharesV2({ authority: wallet.publicKey, mint, currentShareholders: [wallet.publicKey], newShareholders: shareholders, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram })];
@@ -84,7 +86,9 @@ export default async function(req: Request): Promise<Response> {
 
     const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: body.requestId, quoteMint: String(body.quoteMint || '').trim(), firstBuyAmount: String(body.firstBuyAmount || '').trim(), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
     if (!addressPattern.test(input.inscribedMint) || !input.name || Buffer.byteLength(input.name) > 32 || !input.symbol || Buffer.byteLength(input.symbol) > 10 || typeof input.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.requestId) || !addressPattern.test(input.quoteMint)) return Response.json({ error: 'Check the inscription, name, ticker, pair, and launch request.', safeToEdit, inputError: true }, { status: 400 });
-    const recipients = parseRecipients(body.feeRecipients, input.holderReward);
+    let recipients;
+    try { recipients = parseRecipients(body.feeRecipients, input.holderReward); }
+    catch (error) { return Response.json({ error: error.message, safeToEdit, inputError: true }, { status: 400 }); }
     const maxFee = Number(global.maxConfigurableCreatorFeeBps?.toString() || 0);
     if (input.holderReward && !global.isHolderRewardEnabled) return Response.json({ error: 'pump.fun currently has holder rewards disabled.', safeToEdit, inputError: true }, { status: 422 });
     if (!Number.isInteger(input.creatorFeeBps) || input.creatorFeeBps < 0 || input.creatorFeeBps > maxFee || (input.creatorFeeBps > 0 && !global.creatorFeeConfigurable)) return Response.json({ error: 'The creator fee is outside pump.fun’s current allowed range.', safeToEdit, inputError: true }, { status: 400 });

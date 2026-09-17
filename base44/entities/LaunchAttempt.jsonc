@@ -58,6 +58,7 @@
           "type": {
             "type": "string",
             "enum": [
+              "creator",
               "wallet",
               "github"
             ]
