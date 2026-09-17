@@ -64,7 +64,7 @@ async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
       if (isApplied && await isApplied()) return;
       // setBlockhash returns a new builder; sendAndConfirm rebuilds and signs it.
       const freshBuilder = builder.setBlockhash(await getLatestBlockhash(umi));
-      const response = await freshBuilder.sendAndConfirm(umi, { send: { maxRetries: 0 }, confirm: { commitment: 'confirmed' } });
+      const response = await freshBuilder.sendAndConfirm(umi, { send: { skipPreflight: true, maxRetries: 0 }, confirm: { commitment: 'confirmed' } });
       if (response.result?.value?.err) throw new Error(`Transaction failed: ${JSON.stringify(response.result.value.err)}`);
       return response;
     } catch (error) {
@@ -158,9 +158,9 @@ export default async function(req: Request): Promise<Response> {
         }
         const builder = printV1(umi, { masterEditionMint: mintKey, masterTokenAccountOwner: umi.identity, editionMint: editionSigner, editionTokenAccountOwner: umi.identity.publicKey, editionNumber: 1n, tokenStandard: TokenStandard.NonFungible });
         if (input.simulate === true) {
-          const transaction = await builder.buildAndSign(umi);
+          const transaction = await builder.setBlockhash(await getLatestBlockhash(umi)).buildAndSign(umi);
           const encoded = Buffer.from(umi.transactions.serialize(transaction)).toString('base64');
-          const simulation = await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: true }]);
+          const simulation = await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', replaceRecentBlockhash: true, sigVerify: false }]);
           return Response.json({ simulated: true, error: simulation.value.err, logs: simulation.value.logs });
         }
         await sendWithFreshBlockhash(builder, umi, async () => (await masterEditionState(rpcUrl, masterEditionAccount[0].toString()))?.supply === 1n);
