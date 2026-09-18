@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 
 const maxJobs = 3;
 const chunksPerJob = 6;
+const maxEvents = 200;
 
 export default async function(req: Request): Promise<Response> {
   try {
@@ -11,14 +12,23 @@ export default async function(req: Request): Promise<Response> {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     if (user.role !== 'admin') return Response.json({ error: 'Admin access required.' }, { status: 403 });
     const input = await req.json().catch(() => ({}));
+    const identity = await base44.functions.invoke('mintInscribedNft', { action: 'signer' });
+    const signer = identity.data?.signer || '';
+    const signerSecretName = identity.data?.secretName || '';
     const target = input.recordId ? await base44.asServiceRole.entities.MintRecord.get(String(input.recordId)).catch(() => null) : null;
     const jobs = input.recordId
       ? (target?.status === 'in_progress' ? [target] : [])
       : (await base44.asServiceRole.entities.MintRecord.filter({ status: 'in_progress' }, 'processedAt', 50)).filter(job => job.imageUri).slice(0, maxJobs);
     const results = [];
     for (const job of jobs) {
+      const events = Array.isArray(job.events) ? [...job.events] : [];
+      const log = (message, details = '') => {
+        events.push({ at: new Date().toISOString(), message, details: String(details) });
+        if (events.length > maxEvents) events.splice(0, events.length - maxEvents);
+      };
       try {
         if (!job.imageUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
+        log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint}`);
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: job.imageUri, expires_in: 300 });
         const fileResponse = await fetch(signed.signed_url);
         if (!fileResponse.ok) throw new Error('The private source image could not be loaded.');
@@ -30,35 +40,59 @@ export default async function(req: Request): Promise<Response> {
         while (offset < bytes.length && processed < chunksPerJob) {
           const chunk = bytes.subarray(offset, Math.min(offset + job.batchBytes, bytes.length));
           const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: job.imageMime, data: chunk.toString('base64') });
-          if (response.data?.error || response.data?.nextOffset !== offset + chunk.length) throw new Error(response.data?.error || 'A chunk did not confirm at the expected offset.');
+          if (response.data?.error || response.data?.nextOffset !== offset + chunk.length) {
+            log('Chunk write failed', `offset ${offset} · ${response.data?.error || 'unexpected confirmation offset'}`);
+            throw new Error(response.data?.error || 'A chunk did not confirm at the expected offset.');
+          }
           confirmed.add(offset);
           offset += chunk.length;
           processed += 1;
+          log('Chunk confirmed on-chain', `${chunk.length} bytes at offset ${offset - chunk.length} · ${offset} / ${bytes.length} bytes written · signer ${signer}`);
         }
-        const progress = { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), processedAt: new Date().toISOString(), errorMessage: '' };
+        const progress = { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), processedAt: new Date().toISOString(), errorMessage: '', signerPublicKey: signer, signerSecretName, events };
         await base44.asServiceRole.entities.MintRecord.update(job.id, progress);
         if (offset === bytes.length) {
           const verification = await base44.functions.invoke('validateInscription', { address: job.mint });
           const proof = verification.data?.checks?.metaplex;
           if (proof?.status !== 'valid' || !proof.hash) {
+            log('Verification pending', 'all bytes written; the on-chain image has not finished confirming yet');
+            await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, events });
             results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset, verification: 'pending' });
             continue;
           }
           const expectedHash = Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex');
-          if (proof.hash.toLowerCase() !== expectedHash) throw new Error('On-chain image verification failed: the embedded bytes do not match the private source image.');
+          if (proof.hash.toLowerCase() !== expectedHash) {
+            log('Verification failed', `on-chain ${proof.hash} does not match source ${expectedHash}`);
+            throw new Error('On-chain image verification failed: the embedded bytes do not match the private source image.');
+          }
+          log('Verification passed', `SHA-256 ${expectedHash}`);
           if (job.maxSupply === '1') {
             const finalized = await base44.functions.invoke('mintInscribedNft', { action: 'finalize', mint: job.mint });
-            if (finalized.data?.error) throw new Error(finalized.data.error);
+            if (finalized.data?.error) {
+              log('Finalize failed', finalized.data.error);
+              throw new Error(finalized.data.error);
+            }
+            log('Master Edition finalized', `maxSupply 1 · edition ${finalized.data?.editionMint || 'printed'} · signer ${signer}`);
           }
-          await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', imageHash: proof.hash });
-          results.push({ id: job.id, mint: job.mint, status: 'success', offset });
+          let archivedImageUri = job.archivedImageUri || '';
+          try {
+            const archive = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([bytes], `${job.mint}-source`, { type: job.imageMime || 'application/octet-stream' }) });
+            archivedImageUri = archive.file_uri;
+            log('Source image archived', `${bytes.length} bytes · ${archivedImageUri}`);
+          } catch (archiveError) {
+            log('Source image archive failed', archiveError.message || 'The archive upload did not complete.');
+          }
+          log('Mint complete', `mint ${job.mint} · signer ${signer}`);
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', imageHash: proof.hash, archivedImageUri, events });
+          results.push({ id: job.id, mint: job.mint, status: 'success', offset, archivedImageUri });
         } else results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset });
       } catch (error) {
-        await base44.asServiceRole.entities.MintRecord.update(job.id, { status: 'failed', errorMessage: error.message || 'Background inscription stopped.', processedAt: new Date().toISOString() });
+        log('Background job stopped', error.message || 'Unknown failure');
+        await base44.asServiceRole.entities.MintRecord.update(job.id, { status: 'failed', errorMessage: error.message || 'Background inscription stopped.', processedAt: new Date().toISOString(), signerPublicKey: signer, signerSecretName, events });
         results.push({ id: job.id, mint: job.mint, status: 'failed', error: error.message });
       }
     }
-    return Response.json({ processed: results.length, results });
+    return Response.json({ processed: results.length, signer, results });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to process inscription jobs.' }, { status: 500 });
   }

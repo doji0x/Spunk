@@ -9,8 +9,9 @@ export default function useInscribedMint(userId, selectedMint = '') {
   const applyRecord = useCallback(record => {
     if (!record) return;
     trackedId.current = record.id;
-    if (record.status === 'success') setState(current => ({ ...current, busy: false, pending: null, progress: 100, error: '', activity: 'Complete', result: { mint: record.mint, owner: record.owner, hash: record.imageHash } }));
-    else setState(current => ({ ...current, busy: false, pending: record, progress: percent(record), error: record.status === 'failed' && record.imageUri ? record.errorMessage || 'Background inscription stopped.' : '', result: null, activity: !record.imageUri ? 'Original image required for background recovery' : record.status === 'failed' ? 'Paused — ready to retry' : 'Running safely in background' }));
+    const logs = Array.isArray(record.events) ? record.events : [];
+    if (record.status === 'success') setState(current => ({ ...current, busy: false, pending: null, progress: 100, error: '', activity: 'Complete', logs, result: { mint: record.mint, owner: record.owner, hash: record.imageHash, signer: record.signerPublicKey, archivedImageUri: record.archivedImageUri } }));
+    else setState(current => ({ ...current, busy: false, pending: record, logs, progress: percent(record), error: record.status === 'failed' && record.imageUri ? record.errorMessage || 'Background inscription stopped.' : '', result: null, activity: !record.imageUri ? 'Original image required for background recovery' : record.status === 'failed' ? 'Paused — ready to retry' : 'Running safely in background' }));
   }, []);
   useEffect(() => {
     if (!userId || !selectedMint) return;

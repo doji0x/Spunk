@@ -95,11 +95,15 @@ export default async function(req: Request): Promise<Response> {
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
     const user = input.action === 'publicQuote' ? null : await base44.auth.me().catch(() => null);
     const isAdmin = user?.role === 'admin';
-    // The admin mint panel signs with its own dedicated keypair, separate from the public inscription wallet.
+    // Admin inscriptions always sign with the dedicated admin wallet — no exceptions.
     const walletSecretName = isAdmin ? adminWalletSecretName : publicWalletSecretName;
     const walletBytes = parseWallet(secrets.get(walletSecretName), walletSecretName);
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
+    if (input.action === 'signer') {
+      if (!isAdmin) return Response.json({ error: 'Admin access required.' }, { status: 403 });
+      return Response.json({ signer: umi.identity.publicKey.toString(), secretName: walletSecretName });
+    }
     if (input.action === 'publicQuote') {
       const quote = await preparePublicMintPayment(rpcUrl, String(input.walletAddress || ''), umi.identity.publicKey.toString(), String(input.requestId || ''), String(input.sessionHash || ''), Number(input.totalSize));
       return Response.json(quote);

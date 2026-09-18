@@ -41,6 +41,41 @@
       "type": "string",
       "description": "Private source image used by the background inscription worker."
     },
+    "archivedImageUri": {
+      "type": "string",
+      "description": "Permanent private archive of the source image, written when the mint completes."
+    },
+    "signerPublicKey": {
+      "type": "string",
+      "description": "Public key of the admin wallet that signs this mint's transactions."
+    },
+    "signerSecretName": {
+      "type": "string",
+      "description": "Name of the secret holding the signing wallet."
+    },
+    "events": {
+      "type": "array",
+      "description": "Append-only durable log of background inscription steps.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "message"
+        ]
+      }
+    },
     "totalSize": {
       "type": "number"
     },
