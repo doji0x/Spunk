@@ -7,10 +7,12 @@ import ValidationForm from '@/components/ValidationForm';
 import ValidationResult from '@/components/ValidationResult';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import AgentProgress from '@/components/proof/AgentProgress';
+import AgentTestButton from '@/components/proof/AgentTestButton';
 
 export default function ProofOfFart() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [progressRefresh, setProgressRefresh] = useState(0);
 
   const validate = async address => {
     setLoading(true);
@@ -39,7 +41,8 @@ export default function ProofOfFart() {
         <div className="rounded-2xl border border-border bg-card p-5"><ShieldCheck className="text-primary" size={20} /><h2 className="mt-4 font-display font-semibold">Validate guards</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">Format, size, rate, and cost limits are checked before minting.</p></div>
         <div className="rounded-2xl border border-border bg-card p-5"><AudioLines className="text-primary" size={20} /><h2 className="mt-4 font-display font-semibold">Solana preserves</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">The MP3 bytes are inscribed and independently verifiable.</p></div>
       </section>
-      <AgentProgress />
+      <AgentTestButton onQueued={() => setProgressRefresh(value => value + 1)} />
+      <AgentProgress refreshKey={progressRefresh} />
       <section className="mt-14 border-t border-primary/20 pt-12 text-center" aria-labelledby="check-fart-title">
         <p className="font-mono text-[10px] tracking-[0.18em] text-primary">CHECK THE RECEIPT</p><h2 id="check-fart-title" className="mt-3 font-display text-3xl font-bold">Verify the inscription</h2><p className="mx-auto mb-7 mt-3 max-w-md text-sm leading-6 text-muted-foreground">Paste the resulting mint address to confirm its complete audio bytes live on-chain.</p>
         <ValidationForm onValidate={validate} loading={loading} /><ValidationResult result={result} />

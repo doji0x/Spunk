@@ -37,6 +37,7 @@ export default async function(req: Request): Promise<Response> {
         const mediaType = job.mediaType || 'image';
         if (!sourceUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
         log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint} · ${mediaType}`);
+        await base44.asServiceRole.entities.MintRecord.update(job.id, { events, processedAt: new Date().toISOString() });
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: sourceUri, expires_in: 300 });
         const fileResponse = await fetch(signed.signed_url);
         if (!fileResponse.ok) throw new Error('The private source media could not be loaded.');
@@ -54,6 +55,7 @@ export default async function(req: Request): Promise<Response> {
           offset += chunk.length;
           processed += 1;
           log('Chunk confirmed on-chain', `${chunk.length} bytes at offset ${offset - chunk.length} · ${offset} / ${bytes.length} bytes written · signer ${signer}`);
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), events, processedAt: new Date().toISOString() });
         }
         const progress = { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), processedAt: new Date().toISOString(), errorMessage: '', signerPublicKey: signer, signerSecretName, events };
         await base44.asServiceRole.entities.MintRecord.update(job.id, progress);
