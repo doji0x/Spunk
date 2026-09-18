@@ -5,6 +5,7 @@ import ValidateHeader from '@/components/ValidateHeader';
 import ValidationForm from '@/components/ValidationForm';
 import ValidationResult from '@/components/ValidationResult';
 import ValidationExplainer from '@/components/ValidationExplainer';
+import CurationPreservation from '@/components/CurationPreservation';
 import ValidationAbout from '@/components/ValidationAbout';
 import InscriptionExamples from '@/components/InscriptionExamples';
 import SupportToken from '@/components/SupportToken';
@@ -39,6 +40,7 @@ export default function Home() {
       <ValidationForm onValidate={validate} loading={loading} /><InscriptionExamples onValidate={validate} disabled={loading} /><ValidationResult result={result} />
       <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[9px] text-muted-foreground"><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />ACTUAL IMAGE BYTES</span><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />NO OFF-CHAIN SHORTCUTS</span></div>
       <ValidationExplainer />
+      <CurationPreservation />
     </main>
     <footer className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 border-t border-border px-4 py-7 text-center text-[10px] text-muted-foreground"><div className="flex w-full items-center justify-between"><span className="font-display font-semibold tracking-wider text-foreground">VALIDATE</span><button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-primary">Metaplex + Solana v1 + LibrePlex <ArrowUpRight size={12} /></button></div><nav aria-label="External links" className="flex items-center gap-4"><a href="https://github.com/doji0x/validate" target="_blank" rel="noreferrer" className="hover:text-primary">Docs</a><a href="https://x.com/humanevolvd?s=11" target="_blank" rel="noreferrer" className="hover:text-primary">X</a><span className="font-mono">BUILT ON SOLANA</span></nav><SupportToken /></footer>
     <ValidateBottomBar />
