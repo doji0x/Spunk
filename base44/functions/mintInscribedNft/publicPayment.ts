@@ -8,11 +8,15 @@ const idPattern = /^[0-9a-f-]{36}$/i;
 const memoProgram = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function publicMintCost(rpcUrl, totalSize) {
-  if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > 1024 * 1024) throw new Error('The image must be 1 MB or smaller.');
+async function estimatedMintCost(rpcUrl, totalSize) {
   const rent = await rpcRequest(rpcUrl, 'getMinimumBalanceForRentExemption', [totalSize + 2400, { commitment: 'confirmed' }]);
   const transactionCount = Math.ceil(totalSize / 800) + 7;
   return rent + transactionCount * 10000 + 30000000;
+}
+
+async function publicMintCost(_rpcUrl, totalSize) {
+  if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > 1024 * 1024) throw new Error('The image must be 1 MB or smaller.');
+  return 500000000;
 }
 
 export async function preparePublicMintPayment(rpcUrl, walletAddress, recipient, requestId, sessionHash, totalSize) {
