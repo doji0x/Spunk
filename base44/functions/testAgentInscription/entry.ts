@@ -26,11 +26,15 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ mint: saved.mint, requestId: saved.requestId, recordId: saved.id, status: saved.status });
     }
     const upload = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([source.bytes], `${input.requestId}-media`, { type: source.mime }) });
+    const sourceUri = String(upload?.file_uri || '').trim();
+    if (!sourceUri.startsWith('mp/private/')) throw new Error('The uploaded media did not return a valid private source reference.');
     const coverUpload = cover ? await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([cover.bytes], `${input.requestId}-cover`, { type: cover.mime }) }) : null;
+    const coverSourceUri = String(coverUpload?.file_uri || '').trim();
+    if (cover && !coverSourceUri.startsWith('mp/private/')) throw new Error('The uploaded cover did not return a valid private source reference.');
     const result = await base44.functions.invoke('mintInscribedNft', {
       action: 'startBackground', deferPreparation: true, requestId: input.requestId, name, symbol, details: description,
-      totalSize: source.bytes.length, mimeType: source.mime, sourceUri: upload.file_uri, destinationWallet, submissionHash,
-      coverSourceUri: coverUpload?.file_uri || '', coverSize: cover?.bytes.length || 0, coverMime: cover?.mime || ''
+      totalSize: source.bytes.length, mimeType: source.mime, sourceUri, destinationWallet, submissionHash,
+      coverSourceUri, coverSize: cover?.bytes.length || 0, coverMime: cover?.mime || ''
     });
     if (result.data?.error || !result.data?.job?.id) throw new Error(result.data?.error || 'The inscription could not be queued.');
     return Response.json({ mint: result.data.mint, requestId: input.requestId, recordId: result.data.job.id, status: result.data.job.status }, { status: 202, headers: { 'Cache-Control': 'no-store' } });
