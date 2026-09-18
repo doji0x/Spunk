@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 
-export default function useMintRecoveryForm(pending) {
-  const [values, setValues] = useState({ name: '', symbol: '', details: '', mint: '', file: null, requestId: undefined });
+export default function useMintRecoveryForm(pending, initialMint = '') {
+  const [values, setValues] = useState({ name: '', symbol: '', details: '', mint: initialMint, file: null, requestId: undefined });
   const [recovery, setRecovery] = useState({ loading: false, error: '' });
   const change = (field, value) => setValues(current => ({ ...current, [field]: value, ...(field === 'mint' ? { requestId: undefined } : {}) }));
+  useEffect(() => {
+    if (!pending && initialMint) setValues(current => ({ ...current, mint: initialMint }));
+  }, [initialMint, Boolean(pending)]);
   useEffect(() => {
     if (!pending) return;
     const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }[pending.mimeType] || 'png';

@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ImageUploadField from '@/components/admin/ImageUploadField';
 
-export default function MintForm({ onMint, busy, pending, onResume }) {
-  const { values, change, recovery } = useMintRecoveryForm(pending);
+export default function MintForm({ onMint, busy, pending, onResume, initialMint }) {
+  const { values, change, recovery } = useMintRecoveryForm(pending, initialMint);
   const { name, symbol, details, file, mint } = values;
   const locked = busy || Boolean(pending);
   const submit = event => {

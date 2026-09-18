@@ -11,7 +11,7 @@ const sha256 = async bytes => {
 
 const wait = milliseconds => new Promise(resolve => window.setTimeout(resolve, milliseconds));
 
-export default function useInscribedMint(userId) {
+export default function useInscribedMint(userId, selectedMint = '') {
   const [state, setState] = useState({ busy: false, progress: 0, error: '', result: null, pending: null, activity: 'Ready', logs: [] });
   const running = useRef(false);
   const log = (message, details = '') => {
@@ -22,13 +22,14 @@ export default function useInscribedMint(userId) {
     if (!userId) return;
     try {
       const logs = loadInscriptionLog(userId);
-      const pending = loadPending(userId);
+      const savedPending = loadPending(userId);
+      const pending = savedPending && (!selectedMint || savedPending.mint === selectedMint) ? savedPending : null;
       if (pending) {
         const restored = addInscriptionLog(userId, 'Restored unfinished inscription', `${pending.mint || 'Mint preparation pending'} · ${confirmedProgress(pending)}% confirmed`);
         setState({ busy: false, progress: confirmedProgress(pending), error: 'An unfinished inscription was restored. Resume to continue the same mint.', result: null, pending, activity: 'Paused — ready to resume', logs: restored });
       } else setState(current => ({ ...current, logs }));
     } catch (error) { setState(current => ({ ...current, error: error.message, activity: 'Recovery needs attention', logs: loadInscriptionLog(userId) })); }
-  }, [userId]);
+  }, [userId, selectedMint]);
   const remember = pending => {
     savePending(pending, userId);
     setState(current => ({ ...current, pending, progress: confirmedProgress(pending) }));

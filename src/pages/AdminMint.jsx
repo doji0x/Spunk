@@ -8,15 +8,17 @@ import PumpLaunchPanel from '@/components/admin/PumpLaunchPanel';
 import useInscribedMint from '@/hooks/useInscribedMint';
 
 export default function AdminMint() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const selectedMint = urlParams.get('mint') || '';
   const [user, setUser] = useState();
-  const mint = useInscribedMint(user?.role === 'admin' ? user.id : null);
+  const mint = useInscribedMint(user?.role === 'admin' ? user.id : null, selectedMint);
   useEffect(() => { base44.auth.me().then(setUser); }, []);
   if (!user) return <div className="validate-surface flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-[#dce1d5] border-t-[#66834a]" /></div>;
   if (user.role !== 'admin') return <main className="validate-surface flex min-h-screen items-center justify-center px-5"><div className="max-w-md rounded-2xl border border-[#dce1d5] bg-white p-8 text-center"><h1 className="text-xl font-semibold">Admin access required</h1><p className="mt-2 text-sm text-[#7e8773]">This mint console is restricted to administrator accounts.</p><Link to="/" className="mt-5 inline-block text-sm underline">Return home</Link></div></main>;
   return <main className="validate-surface min-h-screen px-5 py-10 text-[#252b20]">
     <div className="mx-auto max-w-2xl"><Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-[#657456]"><ArrowLeft size={16} />Back to validator</Link>
       <div className="mb-7 flex items-start gap-3"><span className="rounded-full bg-[#edf2e6] p-2 text-[#66834a]"><ShieldCheck size={20} /></span><div className="flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-[10px] tracking-widest text-[#66834a]">ADMIN · SOLANA MAINNET</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Mint an inscribed NFT</h1></div><Link to="/admin/mints" className="inline-flex items-center gap-2 text-sm text-[#66834a] underline"><History size={16} />Recent mints</Link></div><p className="mt-2 text-sm leading-6 text-[#7e8773]">Creates one NFT owned by the server mint wallet and writes its metadata and complete image bytes directly on-chain. No Arweave, IPFS, or external image URL is used.</p></div></div>
-      <MintForm onMint={mint.start} busy={mint.busy} pending={mint.pending} onResume={mint.resume} /><MintStatus {...mint} onResume={mint.resume} />
+      <MintForm onMint={mint.start} busy={mint.busy} pending={mint.pending} onResume={mint.resume} initialMint={selectedMint} /><MintStatus {...mint} onResume={mint.resume} />
       <PumpLaunchPanel inscriptionBusy={mint.busy} />
     </div>
   </main>;
