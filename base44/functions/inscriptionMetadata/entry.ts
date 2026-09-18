@@ -31,7 +31,9 @@ export default async function(req: Request): Promise<Response> {
     const mint = (url.searchParams.get('mint') || '').trim();
     if (!mintPattern.test(mint)) return Response.json({ error: 'Provide a valid inscribed mint address.' }, { status: 400 });
     const asset = url.searchParams.get('asset') === 'image' ? 'image' : 'json';
-    const cacheKey = `${mint}:${asset}:partial-safe-v1`;
+    const socialUrl = key => { const value = (url.searchParams.get(key) || '').trim(); if (!value || value.length > 200) return ''; try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''; } catch { return ''; } };
+    const socials = asset === 'json' ? { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') } : {};
+    const cacheKey = `${mint}:${asset}:${JSON.stringify(socials)}:partial-safe-v2`;
     const hit = cached(cacheKey);
     if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -56,7 +58,8 @@ export default async function(req: Request): Promise<Response> {
     }
     if (!rootAccount || rootAccount.executable || rootAccount.owner !== programAddress) return Response.json({ error: 'The root inscription account was not found.' }, { status: 404 });
     const fields = await inscribedFields(rootAccount, root, tag === 'image');
-    return remember(cacheKey, JSON.stringify({ ...fields, image: imageUri(mint), showName: true, createdOn: 'https://pump.fun' }), { ...headers, 'content-type': 'application/json' });
+    const socialFields = Object.fromEntries(Object.entries(socials).filter(([, value]) => value));
+    return remember(cacheKey, JSON.stringify({ ...fields, ...socialFields, image: imageUri(mint), showName: true, createdOn: 'https://pump.fun' }), { ...headers, 'content-type': 'application/json' });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to serve inscription metadata.' }, { status: 500 });
   }

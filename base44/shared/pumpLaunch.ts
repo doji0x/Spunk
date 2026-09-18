@@ -6,7 +6,11 @@ export const appBaseUrl = 'https://solvalidate.base44.app';
 // create_v2 mints under Token-2022 today; accept legacy SPL too so a program change never hides a landed launch.
 export const tokenPrograms = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
 
-export function metadataUri(mint) { return `${appBaseUrl}/functions/inscriptionMetadata?mint=${mint}`; }
+export function metadataUri(mint, socials = {}) {
+  const params = new URLSearchParams({ mint });
+  for (const key of ['website', 'twitter', 'github']) if (socials[key]) params.set(key, socials[key]);
+  return `${appBaseUrl}/functions/inscriptionMetadata?${params.toString()}`;
+}
 export function imageUri(mint) { return `${appBaseUrl}/functions/inscriptionMetadata?mint=${mint}&asset=image`; }
 
 // A random request ID produces a fresh mint, but retries reproduce that same keypair.

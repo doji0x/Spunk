@@ -1,16 +1,27 @@
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
 import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
-import { OnlinePumpSdk, PUMP_SDK, bondingCurvePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
+import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
 import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
 import { launchMint, isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { checkMetadataProxy, walletOwnsInscription } from '../../shared/pumpLaunchValidation.ts';
+import { parseRecipients } from '../../shared/pumpRewards.ts';
 
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const solMint = new PublicKey('So11111111111111111111111111111111111111112');
+function socialUrl(value, label) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length > 200) throw new Error(`${label} must be 200 characters or less.`);
+  try { const url = new URL(text); if (!['http:', 'https:'].includes(url.protocol)) throw new Error(); return url.toString(); }
+  catch { throw new Error(`Enter a valid ${label} URL.`); }
+}
+async function accountExists(rpcUrl, address) {
+  return Boolean((await rpcRequest(rpcUrl, 'getAccountInfo', [address, { encoding: 'base64', commitment: 'confirmed' }])).value);
+}
 
 export default async function(req: Request): Promise<Response> {
   try {
@@ -19,6 +30,42 @@ export default async function(req: Request): Promise<Response> {
     if (body.network !== 'mainnet-beta') return Response.json({ error: 'pump.fun launches are available on mainnet only. Switch the network to Mainnet.' }, { status: 400 });
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
+    if (body.action === 'options') {
+      const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
+      const global = await onlineSdk.fetchGlobal();
+      return Response.json({ holderRewardEnabled: global.isHolderRewardEnabled, creatorFeeConfigurable: global.creatorFeeConfigurable, maxCreatorFeeBps: Number(global.maxConfigurableCreatorFeeBps?.toString() || 0) });
+    }
+    if (body.action === 'confirmSharing') {
+      const signature = String(body.signature || '');
+      if (!signaturePattern.test(signature)) return Response.json({ error: 'Invalid reward confirmation.' }, { status: 400 });
+      const state = (await rpcRequest(rpcUrl, 'getSignatureStatuses', [[signature], { searchTransactionHistory: true }])).value[0];
+      return Response.json({ status: state?.err ? 'failed' : ['confirmed', 'finalized'].includes(state?.confirmationStatus) ? 'confirmed' : 'pending' });
+    }
+    if (body.action === 'prepareSharing') {
+      const walletAddress = String(body.walletAddress || '').trim();
+      const coinMint = String(body.coinMint || '').trim();
+      if (!addressPattern.test(walletAddress) || !addressPattern.test(coinMint)) return Response.json({ error: 'Invalid reward configuration.' }, { status: 400 });
+      let recipients;
+      try { recipients = parseRecipients(body.feeRecipients, false); }
+      catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
+      if (!recipients.length) return Response.json({ error: 'Add at least one fee recipient.' }, { status: 400 });
+      const wallet = new PublicKey(walletAddress), mint = new PublicKey(coinMint), curve = bondingCurvePda(mint).toBase58();
+      if (!await isLaunched(rpcUrl, coinMint, curve)) return Response.json({ error: 'Confirm the coin launch before configuring reward sharing.' }, { status: 409 });
+      const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
+      const quote = await onlineSdk.resolveQuoteMint(solMint);
+      const shareholders = [], socialCreates = [];
+      for (const recipient of recipients) {
+        if (recipient.type === 'creator') shareholders.push({ address: wallet, shareBps: recipient.shareBps });
+        else if (recipient.type === 'wallet') shareholders.push({ address: new PublicKey(recipient.value), shareBps: recipient.shareBps });
+        else { const address = socialFeePda(recipient.value, Platform.GitHub); shareholders.push({ address, shareBps: recipient.shareBps }); if (!await accountExists(rpcUrl, address.toBase58())) socialCreates.push(await PUMP_SDK.createSocialFeePda({ payer: wallet, userId: recipient.value, platform: Platform.GitHub })); }
+      }
+      const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 600000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 })];
+      if (!await accountExists(rpcUrl, feeSharingConfigPda(mint).toBase58())) instructions.push(await PUMP_SDK.createFeeSharingConfig({ creator: wallet, mint, pool: null }));
+      instructions.push(...socialCreates, await PUMP_SDK.updateFeeSharesV2({ authority: wallet, mint, currentShareholders: [wallet], newShareholders: shareholders, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram }));
+      const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
+      const message = new TransactionMessage({ payerKey: wallet, recentBlockhash: latest.blockhash, instructions }).compileToV0Message();
+      return Response.json({ transaction: Buffer.from(new VersionedTransaction(message).serialize()).toString('base64'), lastValidBlockHeight: latest.lastValidBlockHeight });
+    }
     if (body.action === 'confirm') {
       const signature = String(body.signature || '');
       const coinMint = String(body.coinMint || '');
@@ -29,12 +76,15 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ status: state?.err ? 'failed' : launched ? 'confirmed' : 'pending', error: state?.err ? JSON.stringify(state.err) : '' });
     }
     if (body.action !== 'prepare') return Response.json({ error: 'Invalid public launch action.' }, { status: 400 });
-    const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || '') };
+    const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || ''), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
+    let socials, recipients;
+    try { socials = { website: socialUrl(body.website, 'website'), twitter: socialUrl(body.twitter, 'X / Twitter'), github: socialUrl(body.github, 'GitHub') }; recipients = parseRecipients(body.feeRecipients, input.holderReward); }
+    catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
     const walletAddress = String(body.walletAddress || '').trim();
     if (!addressPattern.test(walletAddress) || !addressPattern.test(input.inscribedMint) || !input.name || Buffer.byteLength(input.name) > 32 || !input.symbol || Buffer.byteLength(input.symbol) > 10 || !/^[0-9a-f-]{36}$/i.test(input.requestId)) return Response.json({ error: 'Check your wallet, inscription, coin name, and ticker.' }, { status: 400 });
     const proof = await verifyInscription(input.inscribedMint);
     if (proof.status !== 'valid' || !await walletOwnsInscription(rpcUrl, walletAddress, input.inscribedMint, proof)) return Response.json({ error: proof.reason || proof.message || 'The connected wallet must control this valid inscription.' }, { status: 422 });
-    const uri = metadataUri(input.inscribedMint);
+    const uri = metadataUri(input.inscribedMint, socials);
     const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
     if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
     const balance = (await rpcRequest(rpcUrl, 'getBalance', [walletAddress, { commitment: 'confirmed' }])).value;
@@ -43,8 +93,12 @@ export default async function(req: Request): Promise<Response> {
     const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     const mint = await launchMint(walletBytes, walletAddress, input);
     const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
+    const global = await onlineSdk.fetchGlobal();
+    const maxFee = Number(global.maxConfigurableCreatorFeeBps?.toString() || 0);
+    if (input.holderReward && !global.isHolderRewardEnabled) return Response.json({ error: 'pump.fun currently has holder rewards disabled.' }, { status: 422 });
+    if (!Number.isInteger(input.creatorFeeBps) || input.creatorFeeBps < 0 || input.creatorFeeBps > maxFee || (input.creatorFeeBps > 0 && !global.creatorFeeConfigurable)) return Response.json({ error: 'The creator fee is outside pump.fun’s current allowed range.' }, { status: 400 });
     const quote = await onlineSdk.resolveQuoteMint(solMint);
-    const instruction = await PUMP_SDK.createV2Instruction({ mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet, user: wallet, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: new BN(0), holderReward: false, mayhemMode: false });
+    const instruction = await PUMP_SDK.createV2Instruction({ mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet, user: wallet, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: new BN(input.creatorFeeBps), holderReward: input.holderReward, mayhemMode: false });
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
     const message = new TransactionMessage({ payerKey: wallet, recentBlockhash: latest.blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 350000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), instruction] }).compileToV0Message();
     const transaction = new VersionedTransaction(message);
@@ -52,7 +106,7 @@ export default async function(req: Request): Promise<Response> {
     const encoded = Buffer.from(transaction.serialize()).toString('base64');
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
     if (simulation.err) return Response.json({ error: `Launch simulation failed: ${JSON.stringify(simulation.err)}` }, { status: 422 });
-    return Response.json({ transaction: encoded, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight });
+    return Response.json({ transaction: encoded, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }
