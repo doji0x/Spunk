@@ -8,8 +8,7 @@ import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.
 import { verifyInscription } from '../../shared/verifyInscription.ts';
 import { launchMint, isLaunched, settleAttempt, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { supportedPairOptions } from '../../shared/pumpPairs.ts';
-import { checkMetadataProxy } from './metadataProxy.ts';
-import { walletOwnsInscription } from './ownership.ts';
+import { checkMetadataProxy, walletOwnsInscription } from '../../shared/pumpLaunchValidation.ts';
 
 const minLamports = 30_000_000;
 const token2022Program = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');

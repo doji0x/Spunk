@@ -1,5 +1,11 @@
-// Confirms the app-hosted metadata URI already serves usable pump.fun metadata for this inscription.
-// The image bytes were verified on-chain by verifyInscription; they are not downloaded again here.
+import { rpcRequest } from './mintWallet.ts';
+
+export async function walletOwnsInscription(rpcUrl, wallet, mint, proof) {
+  if ((proof.updateAuthorities || []).includes(wallet)) return true;
+  const result = await rpcRequest(rpcUrl, 'getTokenAccountsByOwner', [wallet, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+  return (result?.value || []).some(entry => entry.account?.data?.parsed?.info?.tokenAmount?.amount === '1');
+}
+
 export async function checkMetadataProxy(uri, expectedImage) {
   try {
     const response = await fetch(uri, { redirect: 'manual', signal: AbortSignal.timeout(10000) });

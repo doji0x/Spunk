@@ -15,6 +15,8 @@ import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import PublicLaunch from '@/pages/PublicLaunch';
+import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -43,6 +45,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -65,8 +68,10 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <ScrollToTop />
-          <AuthenticatedApp />
+          <PhantomWalletProvider>
+            <ScrollToTop />
+            <AuthenticatedApp />
+          </PhantomWalletProvider>
         </Router>
         <Toaster />
       </QueryClientProvider>
