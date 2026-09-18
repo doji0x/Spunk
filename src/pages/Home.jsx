@@ -16,18 +16,16 @@ export default function Home() {
     setLoading(true); setResult(null);
     try {
       const { data } = await base44.functions.invoke('validateInscription', { address });
+      setResult(data);
       if (data.status === 'valid') {
-        const checks = await Promise.all(Object.entries(data.checks || {}).map(async ([kind, check]) => {
+        Promise.all(Object.entries(data.checks || {}).map(async ([kind, check]) => {
           if (check?.status !== 'valid' || !check.image) return [kind, check];
           try {
             const image = new window.Image(); image.src = check.image; await image.decode();
             return [kind, check];
           } catch { return [kind, { ...check, image: null, undecodable: true }]; }
-        }));
-        setResult({ ...data, checks: Object.fromEntries(checks) });
-        return;
+        })).then(checks => setResult(current => current === data ? { ...data, checks: Object.fromEntries(checks) } : current));
       }
-      setResult(data);
     } catch { setResult({ status: 'unknown', message: 'The verification service is unavailable. Please try again shortly.' }); }
     finally { setLoading(false); }
   };
