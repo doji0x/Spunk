@@ -16,7 +16,7 @@ export default async function(req: Request): Promise<Response> {
     const target = input.recordId ? await base44.asServiceRole.entities.MintRecord.get(String(input.recordId)).catch(() => null) : null;
     const jobs = input.recordId
       ? (target?.status === 'in_progress' ? [target] : [])
-      : (await base44.asServiceRole.entities.MintRecord.filter({ status: 'in_progress' }, 'processedAt', 50)).filter(job => job.imageUri).slice(0, maxJobs);
+      : (await base44.asServiceRole.entities.MintRecord.filter({ status: 'in_progress' }, 'processedAt', 50)).filter(job => job.sourceUri || job.imageUri).slice(0, maxJobs);
     const results = [];
     for (const job of jobs) {
       const events = Array.isArray(job.events) ? [...job.events] : [];
@@ -32,17 +32,20 @@ export default async function(req: Request): Promise<Response> {
       const signer = identity.data?.signer || '';
       lastSigner = signer || lastSigner;
       try {
-        if (!job.imageUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
-        log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint}`);
-        const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: job.imageUri, expires_in: 300 });
+        const sourceUri = job.sourceUri || job.imageUri;
+        const mediaMime = job.mediaMime || job.imageMime;
+        const mediaType = job.mediaType || 'image';
+        if (!sourceUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
+        log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint} · ${mediaType}`);
+        const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: sourceUri, expires_in: 300 });
         const fileResponse = await fetch(signed.signed_url);
-        if (!fileResponse.ok) throw new Error('The private source image could not be loaded.');
+        if (!fileResponse.ok) throw new Error('The private source media could not be loaded.');
         const bytes = Buffer.from(await fileResponse.arrayBuffer());
-        if (bytes.length !== job.totalSize) throw new Error('The stored source image size no longer matches this mint.');
+        if (bytes.length !== job.totalSize) throw new Error('The stored source media size no longer matches this mint.');
         let processed = 0;
         while (offset < bytes.length && processed < chunksPerJob) {
           const chunk = bytes.subarray(offset, Math.min(offset + job.batchBytes, bytes.length));
-          const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: job.imageMime, data: chunk.toString('base64'), signerSecretName });
+          const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: mediaMime, data: chunk.toString('base64'), signerSecretName });
           if (response.data?.error || response.data?.nextOffset !== offset + chunk.length) {
             log('Chunk write failed', `offset ${offset} · ${response.data?.error || 'unexpected confirmation offset'}`);
             throw new Error(response.data?.error || 'A chunk did not confirm at the expected offset.');
@@ -58,7 +61,7 @@ export default async function(req: Request): Promise<Response> {
           const verification = await base44.functions.invoke('validateInscription', { address: job.mint });
           const proof = verification.data?.checks?.metaplex;
           if (proof?.status !== 'valid' || !proof.hash) {
-            log('Verification pending', 'all bytes written; the on-chain image has not finished confirming yet');
+            log('Verification pending', `all bytes written; the on-chain ${mediaType} has not finished confirming yet`);
             await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, events });
             results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset, verification: 'pending' });
             continue;
@@ -66,7 +69,7 @@ export default async function(req: Request): Promise<Response> {
           const expectedHash = Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex');
           if (proof.hash.toLowerCase() !== expectedHash) {
             log('Verification failed', `on-chain ${proof.hash} does not match source ${expectedHash}`);
-            throw new Error('On-chain image verification failed: the embedded bytes do not match the private source image.');
+            throw new Error(`On-chain ${mediaType} verification failed: the embedded bytes do not match the private source media.`);
           }
           log('Verification passed', `SHA-256 ${expectedHash}`);
           if (job.maxSupply === '1') {
@@ -85,17 +88,17 @@ export default async function(req: Request): Promise<Response> {
             }
             log('NFT delivered', `mint ${job.mint} · ${job.destinationWallet}`);
           }
-          let archivedImageUri = job.archivedImageUri || '';
+          let archivedSourceUri = job.archivedSourceUri || job.archivedImageUri || '';
           try {
-            const archive = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([bytes], `${job.mint}-source`, { type: job.imageMime || 'application/octet-stream' }) });
-            archivedImageUri = archive.file_uri;
-            log('Source image archived', `${bytes.length} bytes · ${archivedImageUri}`);
+            const archive = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([bytes], `${job.mint}-source`, { type: mediaMime || 'application/octet-stream' }) });
+            archivedSourceUri = archive.file_uri;
+            log('Source media archived', `${bytes.length} bytes · ${archivedSourceUri}`);
           } catch (archiveError) {
-            log('Source image archive failed', archiveError.message || 'The archive upload did not complete.');
+            log('Source media archive failed', archiveError.message || 'The archive upload did not complete.');
           }
           log('Mint complete', `mint ${job.mint} · signer ${signer}`);
-          await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', imageHash: proof.hash, archivedImageUri, events });
-          results.push({ id: job.id, mint: job.mint, status: 'success', offset, archivedImageUri });
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', mediaHash: proof.hash, archivedSourceUri, ...(mediaType === 'image' ? { imageHash: proof.hash, archivedImageUri: archivedSourceUri } : {}), events });
+          results.push({ id: job.id, mint: job.mint, status: 'success', offset, archivedSourceUri });
         } else results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset });
       } catch (error) {
         log('Background job stopped', error.message || 'Unknown failure');

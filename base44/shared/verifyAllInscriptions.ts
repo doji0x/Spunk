@@ -19,7 +19,7 @@ export async function verifyAllInscriptions(address) {
   return {
     status: valid ? 'valid' : unknown ? 'unknown' : 'invalid',
     primary,
-    reason: !valid && !unknown ? 'No supported on-chain image inscription was found.' : undefined,
+    reason: !valid && !unknown ? 'No supported on-chain media inscription was found.' : undefined,
     message: !valid && unknown ? 'One or more inscription checks could not be completed.' : undefined,
     checks: { metaplex, v1, libreplex, held, uriLinked }
   };

@@ -11,7 +11,8 @@ export function metadataUri(mint, socials = {}) {
   for (const key of ['website', 'twitter', 'github']) if (socials[key]) params.set(key, socials[key]);
   return `${appBaseUrl}/functions/inscriptionMetadata?${params.toString()}`;
 }
-export function imageUri(mint) { return `${appBaseUrl}/functions/inscriptionMetadata?mint=${mint}&asset=image`; }
+export function assetUri(mint, asset = 'image') { return `${appBaseUrl}/functions/inscriptionMetadata?mint=${mint}&asset=${asset}`; }
+export function imageUri(mint) { return assetUri(mint, 'image'); }
 
 // A random request ID produces a fresh mint, but retries reproduce that same keypair.
 // HMAC prevents the public request ID from revealing the mint's private key.

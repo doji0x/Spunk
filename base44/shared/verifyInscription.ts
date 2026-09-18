@@ -2,7 +2,8 @@ import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { Buffer } from 'node:buffer';
 import { solanaRpc, indexedAsset } from './solanaServices.ts';
 import { programAddress, derive, linkedMint, resolveIndexedMint, decodeMetadata, associatedAddress, inscriptionTag } from './inscriptionMetadata.ts';
-import { detectImageMime, isCompleteImage } from './imageMime.ts';
+import { isCompleteImage } from './imageMime.ts';
+import { detectMediaMime, mediaTypeForMime } from './mediaMime.ts';
 
 export async function verifyInscription(address) {
   try {
@@ -57,20 +58,28 @@ export async function verifyInscription(address) {
       if (!tag) continue;
       findings.push({ mint: mints[i], root: roots[i], metadata: metadataKeys[i], tag, imageAccount: associatedAddress(metadataKeys[i], tag), immutable: metadata.updateAuthorities.length === 0, updateAuthorities: metadata.updateAuthorities.map(a => a.toString()) });
     }
-    if (!findings.length) return { status: 'invalid', reason: 'No token-linked image inscription was found under the supported Metaplex standard. Other inscription protocols are not checked.' };
-    if (findings.length > 1) return { status: 'unknown', message: 'This transaction includes more than one inscribed token. Paste the specific token mint address to choose which image to verify.' };
+    if (!findings.length) return { status: 'invalid', reason: 'No token-linked media inscription was found under the supported Metaplex standard. Other inscription protocols are not checked.' };
+    if (findings.length > 1) return { status: 'unknown', message: 'This transaction includes more than one inscribed token. Paste the specific token mint address to choose which asset to verify.' };
     const found = findings[0];
     const [rootHead, imageHead] = await getAccounts([found.root, found.imageAccount], true);
-    if (!rootHead || !imageHead || rootHead.owner !== programAddress || imageHead.owner !== programAddress || rootHead.executable || imageHead.executable) return { status: 'invalid', reason: 'The linked on-chain image or inscription account no longer exists.' };
-    if (imageHead.space > 5 * 1024 * 1024) return { status: 'unknown', message: 'An inscription exists, but its image exceeds this viewer’s 5 MB limit.' };
-    const [image] = await getAccounts([found.imageAccount]);
-    if (!image || image.owner !== programAddress) throw new Error('The image account changed during verification. Please try again.');
+    if (!rootHead || !imageHead || rootHead.owner !== programAddress || imageHead.owner !== programAddress || rootHead.executable || imageHead.executable) return { status: 'invalid', reason: 'The linked on-chain media or inscription account no longer exists.' };
+    if (imageHead.space > 5 * 1024 * 1024) return { status: 'unknown', message: 'An inscription exists, but its media exceeds this viewer’s 5 MB limit.' };
+    const [rootAccount, image] = await getAccounts([found.root, found.imageAccount]);
+    if (!image || image.owner !== programAddress) throw new Error('The media account changed during verification. Please try again.');
     const bytes = Buffer.from(image.data[0], 'base64');
-    const mime = detectImageMime(bytes);
-    if (!mime) return { status: 'unknown', message: 'An image-tagged inscription exists, but its bytes are not a supported PNG, JPEG, GIF, or WebP image.' };
+    const mime = detectMediaMime(bytes);
+    if (!mime || (found.tag === 'audio' && mime !== 'audio/mpeg')) return { status: 'unknown', message: 'The tagged inscription bytes are not a supported PNG, JPEG, GIF, WebP, or MP3 asset.' };
+    const mediaType = mediaTypeForMime(mime);
+    let expectedSize = bytes.length;
+    try {
+      const rootFields = JSON.parse(Buffer.from(rootAccount.data[0], 'base64').toString().replace(/\0+$/, '').trim());
+      expectedSize = Number(rootFields.mediaSize || rootFields.imageSize) || bytes.length;
+    } catch { /* Legacy metadata may not declare the expected size. */ }
+    const partial = mediaType === 'audio' ? bytes.length < expectedSize : !isCompleteImage(bytes, mime);
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const indexer = await indexedAsset(found.mint);
-    return { status: 'valid', ...found, image: `data:${mime};base64,${bytes.toString('base64')}`, mime, bytes: bytes.length, partial: !isCompleteImage(bytes, mime), hash: Buffer.from(digest).toString('hex'), checkedAt: new Date().toISOString(), standard: 'Metaplex Inscription', indexer };
+    const dataUri = `data:${mime};base64,${bytes.toString('base64')}`;
+    return { status: 'valid', ...found, image: dataUri, dataUri, mediaType, mime, bytes: bytes.length, partial, hash: Buffer.from(digest).toString('hex'), checkedAt: new Date().toISOString(), standard: 'Metaplex Inscription', indexer };
   } catch (error) {
     return { status: 'unknown', message: error.message || 'Unable to verify this address right now.' };
   }

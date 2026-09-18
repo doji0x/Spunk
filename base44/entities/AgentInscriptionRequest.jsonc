@@ -1,0 +1,54 @@
+{
+  "name": "AgentInscriptionRequest",
+  "type": "object",
+  "properties": {
+    "credentialHash": {
+      "type": "string",
+      "description": "One-way hash of the agent credential used for durable rate limiting."
+    },
+    "ipHash": {
+      "type": "string",
+      "description": "One-way hash of the source IP used for durable rate limiting."
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "queued",
+        "failed"
+      ],
+      "default": "accepted"
+    }
+  },
+  "required": [
+    "credentialHash",
+    "ipHash",
+    "requestId",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

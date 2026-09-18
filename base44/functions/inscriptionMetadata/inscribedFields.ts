@@ -5,6 +5,13 @@ function pick(source) {
   for (const [key, limit] of [['name', 32], ['symbol', 10], ['description', 1000]]) {
     if (typeof source?.[key] === 'string') fields[key] = source[key].slice(0, limit);
   }
+  if (source?.mediaType === 'audio' && source?.mediaMime === 'audio/mpeg') {
+    fields.mediaType = 'audio';
+    fields.mediaMime = 'audio/mpeg';
+  } else {
+    fields.mediaType = 'image';
+    if (typeof source?.mediaMime === 'string') fields.mediaMime = source.mediaMime.slice(0, 50);
+  }
   return fields;
 }
 

@@ -14,11 +14,12 @@ export async function storedInscriptionTag(rpcUrl, mint) {
   return tag;
 }
 
-export async function mintInscriptionFormat(umi, rpcUrl, mint, exists) {
+export async function mintInscriptionFormat(umi, rpcUrl, mint, exists, mimeType = 'image/png') {
   const proxyUri = metadataUri(mint.toString());
-  if (!exists) return { tag: 'raw', uri: proxyUri };
+  const requestedTag = mimeType === 'audio/mpeg' ? 'audio' : 'raw';
+  if (!exists) return { tag: requestedTag, uri: proxyUri };
   // Preserve both the stored tag and URI, including retries interrupted before association initialization.
   const [tag, tokenMetadata] = await Promise.all([storedInscriptionTag(rpcUrl, mint), fetchMetadataFromSeeds(umi, { mint })]);
   const uri = tokenMetadata.uri.replace(/\0+$/, '');
-  return { tag: tag || (uri === proxyUri ? 'raw' : 'image'), uri };
+  return { tag: tag || (requestedTag === 'audio' ? 'audio' : uri === proxyUri ? 'raw' : 'image'), uri };
 }

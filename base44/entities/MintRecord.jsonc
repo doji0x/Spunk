@@ -22,6 +22,20 @@
     "imageHash": {
       "type": "string"
     },
+    "mediaHash": {
+      "type": "string"
+    },
+    "mediaType": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ],
+      "default": "image"
+    },
+    "mediaMime": {
+      "type": "string"
+    },
     "owner": {
       "type": "string"
     },
@@ -41,13 +55,21 @@
     "errorMessage": {
       "type": "string"
     },
+    "sourceUri": {
+      "type": "string",
+      "description": "Private source media used by the background inscription worker."
+    },
+    "archivedSourceUri": {
+      "type": "string",
+      "description": "Permanent private archive of the source media."
+    },
     "imageUri": {
       "type": "string",
-      "description": "Private source image used by the background inscription worker."
+      "description": "Legacy private source image used by the background inscription worker."
     },
     "archivedImageUri": {
       "type": "string",
-      "description": "Permanent private archive of the source image, written when the mint completes."
+      "description": "Legacy permanent private archive of the source image."
     },
     "signerPublicKey": {
       "type": "string",

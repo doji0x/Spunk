@@ -4,6 +4,7 @@ import { Buffer } from 'node:buffer';
 import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash, adminWalletSecretName, publicWalletSecretName } from '../../shared/mintWallet.ts';
 import { recoverableMintSigner, chunkMatches } from './recovery.ts';
 import { mintInscriptionFormat, storedInscriptionTag } from './inscriptionFormat.ts';
+import { detectMediaMime, mediaTypeForMime } from '../../shared/mediaMime.ts';
 import { preparePublicMintPayment, verifyPublicMintPayment } from './publicPayment.ts';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
@@ -95,11 +96,13 @@ export default async function(req: Request): Promise<Response> {
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
     const user = input.action === 'publicQuote' ? null : await base44.auth.me().catch(() => null);
     const isAdmin = user?.role === 'admin';
-    // Admin inscriptions always sign with the dedicated admin wallet — no exceptions.
-    // The background worker may explicitly ask for the public wallet so public jobs keep their own signer.
+    const internalAgent = input.action === 'startBackground' && input.agentRequest === true && String(input.internalAuthorization || '') === secrets.get('INSCRIPTION_API_KEY');
+    if (input.agentRequest === true && !internalAgent) return Response.json({ error: 'Unauthorized agent request.' }, { status: 401 });
+    if (internalAgent && (input.mint || input.destination || input.signerSecretName)) return Response.json({ error: 'Agent inscriptions cannot select a mint, destination, or signer.' }, { status: 400 });
+    // Admin inscriptions always sign with the dedicated admin wallet. Internal agent jobs are forced to the public wallet.
     const requestedSecretName = String(input.signerSecretName || '');
     const workerSignsPublic = isAdmin && requestedSecretName === publicWalletSecretName;
-    const walletSecretName = isAdmin && !workerSignsPublic ? adminWalletSecretName : publicWalletSecretName;
+    const walletSecretName = internalAgent || workerSignsPublic || !isAdmin ? publicWalletSecretName : adminWalletSecretName;
     const walletBytes = parseWallet(secrets.get(walletSecretName), walletSecretName);
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
@@ -113,7 +116,7 @@ export default async function(req: Request): Promise<Response> {
     }
     const publicActions = ['start', 'startBackground', 'append', 'finalize', 'transfer'];
     let publicWallet = '';
-    if (!isAdmin) {
+    if (!isAdmin && !internalAgent) {
       if (!publicActions.includes(input.action)) return Response.json({ error: user ? 'Forbidden' : 'Unauthorized' }, { status: user ? 403 : 401 });
       const authorization = await verifyPublicMintPayment(rpcUrl, umi.identity.publicKey.toString(), input);
       publicWallet = authorization.walletAddress;
@@ -126,11 +129,13 @@ export default async function(req: Request): Promise<Response> {
       const symbol = String(input.symbol || '').trim().toUpperCase();
       const description = String(input.details || '').trim();
       const totalSize = Number(input.totalSize);
-      const imageUri = background ? String(input.imageUri || '').trim() : '';
-      if (background && (!imageUri || imageUri.length > 1000)) return Response.json({ error: 'A private source image is required for background minting.' }, { status: 400 });
+      const sourceUri = background ? String(input.sourceUri || input.imageUri || '').trim() : '';
+      const mediaType = mediaTypeForMime(input.mimeType);
+      if (background && (!sourceUri || sourceUri.length > 1000)) return Response.json({ error: 'Private source media is required for background minting.' }, { status: 400 });
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
-      if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The image must be 1 MB or smaller.' }, { status: 400 });
-      if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, or WebP image.' }, { status: 400 });
+      if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The media must be 1 MB or smaller.' }, { status: 400 });
+      if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'audio/mpeg'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, WebP, or MP3 file.' }, { status: 400 });
+      if (internalAgent && (input.mimeType !== 'audio/mpeg' || typeof input.firstChunk !== 'string')) return Response.json({ error: 'Agent inscriptions require an MP3 first chunk for simulation.' }, { status: 400 });
       if (input.requestId !== undefined && (typeof input.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.requestId))) return Response.json({ error: 'Invalid mint recovery identifier.' }, { status: 400 });
       let mintSigner = null;
       let mintKey;
@@ -146,7 +151,7 @@ export default async function(req: Request): Promise<Response> {
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const mintExists = await accountExists(rpcUrl, mintAddress);
-      const { tag, uri } = await mintInscriptionFormat(umi, rpcUrl, mintKey, mintExists);
+      const { tag, uri } = await mintInscriptionFormat(umi, rpcUrl, mintKey, mintExists, input.mimeType);
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: tag, inscriptionMetadataAccount });
       if (mintSigner && !mintExists) {
         await sendWithFreshBlockhash(createV1(umi, { mint: mintSigner, name, symbol, uri, sellerFeeBasisPoints: percentAmount(0), tokenStandard: TokenStandard.NonFungible, printSupply: { __kind: 'Limited', fields: [1n] } }), umi, () => accountExists(rpcUrl, mintAddress));
@@ -157,7 +162,7 @@ export default async function(req: Request): Promise<Response> {
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
       }
-      const metadata = Buffer.from(JSON.stringify({ name, symbol, description, imageSize: totalSize, imageMime: input.mimeType }));
+      const metadata = Buffer.from(JSON.stringify({ name, symbol, description, mediaType, mediaMime: input.mimeType, mediaSize: totalSize, ...(mediaType === 'image' ? { imageSize: totalSize, imageMime: input.mimeType } : {}) }));
       if (!await accountExists(rpcUrl, associatedInscriptionAccount[0].toString())) {
         const builder = new TransactionBuilder()
           .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
@@ -173,16 +178,25 @@ export default async function(req: Request): Promise<Response> {
           if (!await applied()) await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: chunk, associatedTag: null, offset }), umi, applied);
         }
       }
+      if (internalAgent) {
+        const firstChunk = Buffer.from(input.firstChunk, 'base64');
+        if (!firstChunk.length || firstChunk.length > writeChunkBytes || detectMediaMime(firstChunk) !== 'audio/mpeg') return Response.json({ error: 'The MP3 simulation chunk is invalid.' }, { status: 400 });
+        const simulationBuilder = writeData(umi, { inscriptionAccount: associatedInscriptionAccount, inscriptionMetadataAccount, value: new Uint8Array(firstChunk), associatedTag: tag, offset: 0 });
+        const transaction = await simulationBuilder.setBlockhash(await getLatestBlockhash(umi)).buildAndSign(umi);
+        const encoded = Buffer.from(umi.transactions.serialize(transaction)).toString('base64');
+        const simulation = await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', replaceRecentBlockhash: true, sigVerify: false }]);
+        if (simulation.value?.err) return Response.json({ error: `The first audio write failed simulation: ${JSON.stringify(simulation.value.err)}` }, { status: 409 });
+      }
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
       const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
       const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
       const prepared = { mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null };
       if (!background) return Response.json(prepared);
-      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', imageUri, totalSize, imageMime: input.mimeType, batchBytes, offset: 0, confirmedOffsets: [], signerPublicKey: prepared.owner, signerSecretName: walletSecretName, ...(publicWallet ? { destinationWallet: publicWallet } : {}), ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
+      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', sourceUri, mediaType, mediaMime: input.mimeType, totalSize, batchBytes, offset: 0, confirmedOffsets: [], signerPublicKey: prepared.owner, signerSecretName: walletSecretName, ...(mediaType === 'image' ? { imageUri: sourceUri, imageMime: input.mimeType } : {}), ...(publicWallet ? { destinationWallet: publicWallet } : {}), ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
       const matches = await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId });
       const existing = matches[0];
       // Re-submitting the same mint must never rewind saved progress; only a different source image restarts at 0.
-      const resumed = existing && existing.totalSize === totalSize
+      const resumed = existing && existing.totalSize === totalSize && (existing.mediaMime || existing.imageMime) === input.mimeType
         ? { ...recordData, offset: Number(existing.offset) || 0, confirmedOffsets: Array.isArray(existing.confirmedOffsets) ? existing.confirmedOffsets : [] }
         : recordData;
       const job = existing ? await base44.asServiceRole.entities.MintRecord.update(existing.id, resumed) : await base44.asServiceRole.entities.MintRecord.create(recordData);
@@ -197,7 +211,7 @@ export default async function(req: Request): Promise<Response> {
       if (!mintPattern.test(mint) || !await accountExists(rpcUrl, mint)) return Response.json({ error: 'The mint account was not found.' }, { status: 400 });
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       const mintKey = publicKey(mint);
-      if (!await storedInscriptionTag(rpcUrl, mintKey)) return Response.json({ error: 'No supported image inscription is linked to this mint.' }, { status: 409 });
+      if (!await storedInscriptionTag(rpcUrl, mintKey)) return Response.json({ error: 'No supported media inscription is linked to this mint.' }, { status: 409 });
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const address = inscriptionAccount[0].toString();
@@ -206,7 +220,8 @@ export default async function(req: Request): Promise<Response> {
       let progressFields = {};
       try {
         const stored = JSON.parse(current.toString().trim());
-        if (Number.isInteger(stored.imageSize) && stored.imageSize > 0) progressFields = { imageSize: stored.imageSize, imageMime: stored.imageMime };
+        if (Number.isInteger(stored.mediaSize) && stored.mediaSize > 0) progressFields = { mediaType: stored.mediaType || 'image', mediaMime: stored.mediaMime || stored.imageMime, mediaSize: stored.mediaSize, ...(stored.imageSize ? { imageSize: stored.imageSize, imageMime: stored.imageMime } : {}) };
+        else if (Number.isInteger(stored.imageSize) && stored.imageSize > 0) progressFields = { mediaType: 'image', mediaMime: stored.imageMime, mediaSize: stored.imageSize, imageSize: stored.imageSize, imageMime: stored.imageMime };
       } catch { /* Older metadata may not include inscription progress fields. */ }
       const encoded = Buffer.from(JSON.stringify({ name, symbol, description, ...progressFields }));
       const value = encoded.length < current.length ? Buffer.concat([encoded, Buffer.alloc(current.length - encoded.length, 32)]) : encoded;
@@ -267,15 +282,16 @@ export default async function(req: Request): Promise<Response> {
       const offset = Number(input.offset);
       const totalSize = Number(input.totalSize);
       if (!mintPattern.test(mint) || !Number.isInteger(offset) || offset < 0 || offset % writeChunkBytes !== 0) return Response.json({ error: 'Invalid inscription progress.' }, { status: 400 });
-      if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes || typeof input.data !== 'string' || input.data.length > 9000) return Response.json({ error: 'Invalid image batch.' }, { status: 400 });
+      if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes || typeof input.data !== 'string' || input.data.length > 9000) return Response.json({ error: 'Invalid media batch.' }, { status: 400 });
       const bytes = Buffer.from(input.data, 'base64');
-      if (!bytes.length || bytes.length > batchBytes || offset + bytes.length > totalSize) return Response.json({ error: 'Invalid image batch.' }, { status: 400 });
-      if (offset === 0 && !isSupportedImage(bytes, input.mimeType)) return Response.json({ error: 'The image contents do not match its file type.' }, { status: 400 });
+      if (!bytes.length || bytes.length > batchBytes || offset + bytes.length > totalSize) return Response.json({ error: 'Invalid media batch.' }, { status: 400 });
+      if (offset === 0 && detectMediaMime(bytes) !== input.mimeType) return Response.json({ error: 'The media contents do not match its file type.' }, { status: 400 });
       const mintKey = publicKey(mint);
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const tag = await storedInscriptionTag(rpcUrl, mintKey);
       if (!tag) return Response.json({ error: 'No supported inscription is initialized. Resume preparation before writing bytes.' }, { status: 409 });
+      if (input.mimeType === 'audio/mpeg' && tag !== 'audio') return Response.json({ error: 'The audio inscription tag does not match this payload.' }, { status: 409 });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: tag, inscriptionMetadataAccount });
       const imageAddress = associatedInscriptionAccount[0].toString();
       const value = new Uint8Array(bytes.subarray(0, writeChunkBytes));
