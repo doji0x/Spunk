@@ -1,0 +1,45 @@
+{
+  "name": "Profile",
+  "type": "object",
+  "properties": {
+    "walletAddress": {
+      "type": "string",
+      "description": "Solana wallet address and profile identity."
+    },
+    "handle": {
+      "type": "string"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "bio": {
+      "type": "string"
+    },
+    "avatarUrl": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "walletAddress",
+    "handle",
+    "displayName"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

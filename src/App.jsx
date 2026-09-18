@@ -17,6 +17,8 @@ import ResetPassword from '@/pages/ResetPassword';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import PublicLaunch from '@/pages/PublicLaunch';
 import PublicInscribe from '@/pages/PublicInscribe';
+import Feed from '@/pages/Feed';
+import SocialProfile from '@/pages/SocialProfile';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
 
 const AuthenticatedApp = () => {
@@ -48,6 +50,8 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Home />} />
       <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/inscribe" element={<PublicInscribe />} />
+      <Route path="/feed" element={<Feed />} />
+      <Route path="/profile/:wallet" element={<SocialProfile />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />

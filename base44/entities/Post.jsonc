@@ -1,0 +1,38 @@
+{
+  "name": "Post",
+  "type": "object",
+  "properties": {
+    "authorWallet": {
+      "type": "string",
+      "description": "Wallet address of the post author."
+    },
+    "text": {
+      "type": "string"
+    },
+    "mediaUrl": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "authorWallet",
+    "text"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
