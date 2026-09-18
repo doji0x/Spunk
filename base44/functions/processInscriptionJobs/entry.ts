@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { Buffer } from 'node:buffer';
+import { processCover } from './cover.ts';
 
 const maxJobs = 3;
 const chunksPerJob = 6;
@@ -38,6 +39,15 @@ export default async function(req: Request): Promise<Response> {
         if (!sourceUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
         log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint} · ${mediaType}`);
         await base44.asServiceRole.entities.MintRecord.update(job.id, { events, processedAt: new Date().toISOString() });
+        if (job.prepared === false) {
+          log('Preparing mint and inscription accounts', `signer ${signer}`);
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { events });
+          const preparation = await base44.functions.invoke('mintInscribedNft', { action: 'start', requestId: job.requestId, name: job.name, symbol: job.symbol, details: job.description, totalSize: job.totalSize, mimeType: mediaMime, coverSize: job.coverSize || 0, coverMime: job.coverMime || '', signerSecretName });
+          if (preparation.data?.error || preparation.data?.mint !== job.mint) throw new Error(preparation.data?.error || 'Prepared mint does not match this job.');
+          job.maxSupply = preparation.data.maxSupply;
+          log('On-chain preparation complete', `mint ${job.mint}`);
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { prepared: true, maxSupply: job.maxSupply, events });
+        }
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: sourceUri, expires_in: 300 });
         const fileResponse = await fetch(signed.signed_url);
         if (!fileResponse.ok) throw new Error('The private source media could not be loaded.');
@@ -60,6 +70,10 @@ export default async function(req: Request): Promise<Response> {
         const progress = { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), processedAt: new Date().toISOString(), errorMessage: '', signerPublicKey: signer, signerSecretName, events };
         await base44.asServiceRole.entities.MintRecord.update(job.id, progress);
         if (offset === bytes.length) {
+          if (!await processCover(base44, job, signerSecretName, log, events)) {
+            results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset, stage: 'cover' });
+            continue;
+          }
           const verification = await base44.functions.invoke('validateInscription', { address: job.mint });
           const proof = verification.data?.checks?.metaplex;
           if (proof?.status !== 'valid' || !proof.hash) {
@@ -97,6 +111,17 @@ export default async function(req: Request): Promise<Response> {
             log('Source media archived', `${bytes.length} bytes · ${archivedSourceUri}`);
           } catch (archiveError) {
             log('Source media archive failed', archiveError.message || 'The archive upload did not complete.');
+            if (job.pof) throw archiveError;
+          }
+          if (job.coverSourceUri) {
+            const coverLink = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: job.coverSourceUri, expires_in: 300 });
+            const coverResponse = await fetch(coverLink.signed_url);
+            if (!coverResponse.ok) throw new Error('Cover archive source is unavailable.');
+            const coverBytes = await coverResponse.arrayBuffer();
+            if (coverBytes.byteLength !== job.coverSize) throw new Error('Cover archive size mismatch.');
+            const coverArchive = await base44.asServiceRole.integrations.Core.UploadPrivateFile({ file: new File([coverBytes], `${job.mint}-cover`, { type: job.coverMime }) });
+            await base44.asServiceRole.entities.MintRecord.update(job.id, { archivedCoverUri: coverArchive.file_uri });
+            log('Cover artwork archived', `${job.coverSize} bytes`);
           }
           log('Mint complete', `mint ${job.mint} · signer ${signer}`);
           await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', mediaHash: proof.hash, archivedSourceUri, ...(mediaType === 'image' ? { imageHash: proof.hash, archivedImageUri: archivedSourceUri } : {}), events });

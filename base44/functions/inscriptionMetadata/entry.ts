@@ -20,6 +20,11 @@ function imageComplete(bytes, mime) {
   return false;
 }
 
+function inscribedCoverMime(rootAccount) {
+  try { return JSON.parse(Buffer.from(rootAccount.data[0], 'base64').toString().trim()).coverMime || 'image/png'; }
+  catch { return 'image/png'; }
+}
+
 async function account(key) {
   return (await solanaRpc('getMultipleAccounts', [[key], { encoding: 'base64', commitment: 'confirmed' }])).value[0];
 }
@@ -34,7 +39,7 @@ export default async function(req: Request): Promise<Response> {
     const asset = ['image', 'audio'].includes(requestedAsset) ? requestedAsset : 'json';
     const socialUrl = key => { const value = (url.searchParams.get(key) || '').trim(); if (!value || value.length > 200) return ''; try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''; } catch { return ''; } };
     const socials = asset === 'json' ? { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') } : {};
-    const cacheKey = `${mint}:${asset}:${JSON.stringify(socials)}:media-v1`;
+    const cacheKey = `${mint}:${asset}:${JSON.stringify(socials)}:media-v2`;
     const hit = cached(cacheKey);
     if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -42,6 +47,7 @@ export default async function(req: Request): Promise<Response> {
     const metadataKey = derive(root);
     const metadata = decodeMetadata(await account(metadataKey));
     const tag = inscriptionTag(metadata);
+    const hasCover = tag === 'audio' && metadata?.associatedInscriptions?.some(entry => entry.tag === 'cover');
     const linked = metadata && metadata.inscriptionAccount === root && (metadata.mint?.__option === 'Some' ? metadata.mint.value === mint : metadata.key === 2);
     if (!linked || !tag) return Response.json({ error: 'No supported media inscription is linked to this mint.' }, { status: 404 });
     const rootAccount = await account(root);
@@ -60,8 +66,8 @@ export default async function(req: Request): Promise<Response> {
       return bytes.length < expectedSize ? new Response(bytes, { headers: audioHeaders }) : remember(cacheKey, bytes, audioHeaders);
     }
     if (asset === 'image') {
-      if (tag === 'audio') return Response.json({ error: 'This mint contains audio, not an image.' }, { status: 404 });
-      const image = await account(associatedAddress(metadataKey, tag));
+      if (tag === 'audio' && !hasCover) return Response.json({ error: 'This audio mint has no inscribed cover artwork.' }, { status: 404 });
+      const image = await account(associatedAddress(metadataKey, hasCover ? 'cover' : tag));
       if (!image || image.executable || image.owner !== programAddress) return Response.json({ error: 'The inscribed image account was not found.' }, { status: 404 });
       if (image.space > 5 * 1024 * 1024) return Response.json({ error: 'The inscribed image exceeds 5 MB.' }, { status: 413 });
       const bytes = Buffer.from(image.data[0], 'base64');
@@ -76,8 +82,11 @@ export default async function(req: Request): Promise<Response> {
     const fields = await inscribedFields(rootAccount, root, tag === 'image');
     const mediaType = tag === 'audio' || fields.mediaType === 'audio' ? 'audio' : 'image';
     const socialFields = Object.fromEntries(Object.entries(socials).filter(([, value]) => value));
-    const mediaFields = mediaType === 'audio' ? { mediaType, mediaMime: 'audio/mpeg', animation_url: assetUri(mint, 'audio') } : { mediaType, mediaMime: fields.mediaMime, image: imageUri(mint) };
-    return remember(cacheKey, JSON.stringify({ ...fields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' }), { ...headers, 'content-type': 'application/json' });
+    const mediaFields = mediaType === 'audio' ? { mediaType, mediaMime: 'audio/mpeg', animation_url: assetUri(mint, 'audio'), ...(hasCover ? { image: imageUri(mint) } : {}), properties: { category: 'audio', files: [{ uri: assetUri(mint, 'audio'), type: 'audio/mpeg' }, ...(hasCover ? [{ uri: imageUri(mint), type: (await inscribedCoverMime(rootAccount)) }] : [])] } } : { mediaType, mediaMime: fields.mediaMime, image: imageUri(mint) };
+    const body = JSON.stringify({ ...fields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
+    // Audio preparation may initialize the cover after the audio association: do not cache incomplete artwork discovery.
+    if (mediaType === 'audio') return new Response(body, { headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
+    return remember(cacheKey, body, { ...headers, 'content-type': 'application/json' });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to serve inscription metadata.' }, { status: 500 });
   }

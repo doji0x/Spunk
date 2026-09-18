@@ -3,6 +3,7 @@ import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
 import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash, adminWalletSecretName, publicWalletSecretName } from '../../shared/mintWallet.ts';
 import { recoverableMintSigner, chunkMatches } from './recovery.ts';
+import { queuePof } from './queuePof.ts';
 import { mintInscriptionFormat, storedInscriptionTag } from './inscriptionFormat.ts';
 import { detectMediaMime, mediaTypeForMime } from '../../shared/mediaMime.ts';
 import { preparePublicMintPayment, verifyPublicMintPayment } from './publicPayment.ts';
@@ -96,6 +97,7 @@ export default async function(req: Request): Promise<Response> {
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
     const user = input.action === 'publicQuote' ? null : await base44.auth.me().catch(() => null);
     const isAdmin = user?.role === 'admin';
+    if ((input.deferPreparation || input.cover || input.coverSize || input.action === 'coverProof' || input.destinationWallet) && !isAdmin) return Response.json({ error: 'Admin access required for POF controls.' }, { status: 403 });
     const internalAgent = input.action === 'startBackground' && input.agentRequest === true && String(input.internalAuthorization || '') === secrets.get('INSCRIPTION_API_KEY');
     if (input.agentRequest === true && !internalAgent) return Response.json({ error: 'Unauthorized agent request.' }, { status: 401 });
     if (internalAgent && (input.mint || input.destination || input.signerSecretName)) return Response.json({ error: 'Agent inscriptions cannot select a mint, destination, or signer.' }, { status: 400 });
@@ -148,6 +150,14 @@ export default async function(req: Request): Promise<Response> {
         mintKey = mintSigner.publicKey;
       }
       const mintAddress = mintKey.toString();
+      const coverSize = Number(input.coverSize) || 0;
+      if (coverSize && (mediaType !== 'audio' || !Number.isInteger(coverSize) || coverSize < 1 || coverSize > maxImageBytes || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.coverMime))) return Response.json({ error: 'Invalid audio cover artwork.' }, { status: 400 });
+      if (input.destinationWallet && !mintPattern.test(input.destinationWallet)) return Response.json({ error: 'Invalid destination wallet.' }, { status: 400 });
+      if (background && input.deferPreparation === true) {
+        if (!input.requestId || input.mint || !input.submissionHash || !input.destinationWallet || (coverSize && !input.coverSourceUri)) return Response.json({ error: 'Incomplete POF submission.' }, { status: 400 });
+        const job = await queuePof(base44, input, mintAddress, umi.identity.publicKey.toString(), walletSecretName);
+        return Response.json({ mint: mintAddress, job, prepared: false }, { status: 202 });
+      }
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
       const mintExists = await accountExists(rpcUrl, mintAddress);
@@ -162,14 +172,15 @@ export default async function(req: Request): Promise<Response> {
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
       }
-      const metadata = Buffer.from(JSON.stringify({ name, symbol, description, mediaType, mediaMime: input.mimeType, mediaSize: totalSize, ...(mediaType === 'image' ? { imageSize: totalSize, imageMime: input.mimeType } : {}) }));
+      const metadata = Buffer.from(JSON.stringify({ name, symbol, description, mediaType, mediaMime: input.mimeType, mediaSize: totalSize, ...(mediaType === 'image' ? { imageSize: totalSize, imageMime: input.mimeType } : {}), ...(coverSize ? { coverSize, coverMime: input.coverMime, imageSize: coverSize, imageMime: input.coverMime } : {}) }));
       if (!await accountExists(rpcUrl, associatedInscriptionAccount[0].toString())) {
-        const builder = new TransactionBuilder()
-          .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
-          .add(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: tag }));
-        await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
+        await sendWithFreshBlockhash(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: tag }), umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
       }
-      const currentMetadata = await accountData(rpcUrl, inscriptionAccount[0].toString());
+      if (coverSize) {
+        const coverAccount = findAssociatedInscriptionPda(umi, { associated_tag: 'cover', inscriptionMetadataAccount });
+        if (!await accountExists(rpcUrl, coverAccount[0].toString())) await sendWithFreshBlockhash(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount: coverAccount, associationTag: 'cover' }), umi, () => accountExists(rpcUrl, coverAccount[0].toString()));
+      }
+      const currentMetadata = await accountData(rpcUrl, inscriptionAccount[0].toString()) || Buffer.alloc(0);
       if (currentMetadata) {
         const value = metadata.length < currentMetadata.length ? Buffer.concat([metadata, Buffer.alloc(currentMetadata.length - metadata.length, 32)]) : metadata;
         if (!currentMetadata.equals(value)) for (let offset = 0; offset < value.length; offset += writeChunkBytes) {
@@ -192,7 +203,7 @@ export default async function(req: Request): Promise<Response> {
       const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
       const prepared = { mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null };
       if (!background) return Response.json(prepared);
-      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', sourceUri, mediaType, mediaMime: input.mimeType, totalSize, batchBytes, offset: 0, confirmedOffsets: [], signerPublicKey: prepared.owner, signerSecretName: walletSecretName, ...(mediaType === 'image' ? { imageUri: sourceUri, imageMime: input.mimeType } : {}), ...(publicWallet ? { destinationWallet: publicWallet } : {}), ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
+      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', sourceUri, mediaType, mediaMime: input.mimeType, totalSize, batchBytes, offset: 0, confirmedOffsets: [], signerPublicKey: prepared.owner, signerSecretName: walletSecretName, ...(mediaType === 'image' ? { imageUri: sourceUri, imageMime: input.mimeType } : {}), ...(publicWallet || (isAdmin && input.destinationWallet) ? { destinationWallet: publicWallet || input.destinationWallet } : {}), ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
       const matches = await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId });
       const existing = matches[0];
       // Re-submitting the same mint must never rewind saved progress; only a different source image restarts at 0.
@@ -220,7 +231,7 @@ export default async function(req: Request): Promise<Response> {
       let progressFields = {};
       try {
         const stored = JSON.parse(current.toString().trim());
-        if (Number.isInteger(stored.mediaSize) && stored.mediaSize > 0) progressFields = { mediaType: stored.mediaType || 'image', mediaMime: stored.mediaMime || stored.imageMime, mediaSize: stored.mediaSize, ...(stored.imageSize ? { imageSize: stored.imageSize, imageMime: stored.imageMime } : {}) };
+        if (Number.isInteger(stored.mediaSize) && stored.mediaSize > 0) progressFields = { mediaType: stored.mediaType || 'image', mediaMime: stored.mediaMime || stored.imageMime, mediaSize: stored.mediaSize, ...(stored.imageSize ? { imageSize: stored.imageSize, imageMime: stored.imageMime } : {}), ...(stored.coverSize ? { coverSize: stored.coverSize, coverMime: stored.coverMime } : {}) };
         else if (Number.isInteger(stored.imageSize) && stored.imageSize > 0) progressFields = { mediaType: 'image', mediaMime: stored.imageMime, mediaSize: stored.imageSize, imageSize: stored.imageSize, imageMime: stored.imageMime };
       } catch { /* Older metadata may not include inscription progress fields. */ }
       const encoded = Buffer.from(JSON.stringify({ name, symbol, description, ...progressFields }));
@@ -277,6 +288,17 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ mint, destination, destinationToken: destinationToken[0].toString() });
     }
 
+    if (input.action === 'coverProof') {
+      const mint = String(input.mint || '');
+      if (!mintPattern.test(mint)) return Response.json({ error: 'Invalid mint.' }, { status: 400 });
+      const root = findMintInscriptionPda(umi, { mint: publicKey(mint) });
+      const metadata = findInscriptionMetadataPda(umi, { inscriptionAccount: root[0] });
+      const cover = findAssociatedInscriptionPda(umi, { associated_tag: 'cover', inscriptionMetadataAccount: metadata });
+      const bytes = await accountData(rpcUrl, cover[0].toString());
+      if (!bytes) return Response.json({ error: 'Cover not found.' }, { status: 404 });
+      return Response.json({ hash: Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex'), bytes: bytes.length });
+    }
+
     if (input.action === 'append') {
       const mint = String(input.mint || '');
       const offset = Number(input.offset);
@@ -289,7 +311,9 @@ export default async function(req: Request): Promise<Response> {
       const mintKey = publicKey(mint);
       const inscriptionAccount = await findMintInscriptionPda(umi, { mint: mintKey });
       const inscriptionMetadataAccount = await findInscriptionMetadataPda(umi, { inscriptionAccount: inscriptionAccount[0] });
-      const tag = await storedInscriptionTag(rpcUrl, mintKey);
+      const primaryTag = await storedInscriptionTag(rpcUrl, mintKey);
+      const tag = input.cover === true ? 'cover' : primaryTag;
+      if (input.cover === true && (primaryTag !== 'audio' || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType))) return Response.json({ error: 'Cover writes require an audio mint and image payload.' }, { status: 400 });
       if (!tag) return Response.json({ error: 'No supported inscription is initialized. Resume preparation before writing bytes.' }, { status: 409 });
       if (input.mimeType === 'audio/mpeg' && tag !== 'audio') return Response.json({ error: 'The audio inscription tag does not match this payload.' }, { status: 409 });
       const associatedInscriptionAccount = findAssociatedInscriptionPda(umi, { associated_tag: tag, inscriptionMetadataAccount });

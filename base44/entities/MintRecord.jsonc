@@ -41,7 +41,7 @@
     },
     "destinationWallet": {
       "type": "string",
-      "description": "Public wallet that paid for the mint and receives the finished NFT."
+      "description": "Wallet receiving the completed NFT."
     },
     "status": {
       "type": "string",
@@ -60,28 +60,22 @@
       "description": "Private source media used by the background inscription worker."
     },
     "archivedSourceUri": {
-      "type": "string",
-      "description": "Permanent private archive of the source media."
+      "type": "string"
     },
     "imageUri": {
-      "type": "string",
-      "description": "Legacy private source image used by the background inscription worker."
+      "type": "string"
     },
     "archivedImageUri": {
-      "type": "string",
-      "description": "Legacy permanent private archive of the source image."
+      "type": "string"
     },
     "signerPublicKey": {
-      "type": "string",
-      "description": "Public key of the wallet that signs this mint's transactions."
+      "type": "string"
     },
     "signerSecretName": {
-      "type": "string",
-      "description": "Name of the secret holding the signing wallet."
+      "type": "string"
     },
     "events": {
       "type": "array",
-      "description": "Append-only durable log of background inscription steps.",
       "items": {
         "type": "object",
         "properties": {
@@ -126,6 +120,36 @@
       "format": "date-time"
     },
     "maxSupply": {
+      "type": "string"
+    },
+    "pof": {
+      "type": "boolean",
+      "description": "Manually submitted from the admin POF control panel."
+    },
+    "prepared": {
+      "type": "boolean",
+      "description": "False while a durable job awaits on-chain initialization."
+    },
+    "submissionHash": {
+      "type": "string"
+    },
+    "coverSourceUri": {
+      "type": "string"
+    },
+    "coverMime": {
+      "type": "string"
+    },
+    "coverSize": {
+      "type": "number"
+    },
+    "coverOffset": {
+      "type": "number",
+      "default": 0
+    },
+    "coverHash": {
+      "type": "string"
+    },
+    "archivedCoverUri": {
       "type": "string"
     }
   },
