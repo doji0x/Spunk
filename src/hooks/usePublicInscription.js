@@ -49,10 +49,11 @@ export default function usePublicInscription() {
       if (quote.data?.error) throw new Error(quote.data.error);
       const payment = await wallet.provider.signAndSendTransaction(phantomTransaction(quote.data.transaction));
       setState(current => ({ ...current, activity: 'Storing your image for the server' }));
-      const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file: values.file });
+      const upload = await base44.integrations.Core.UploadPrivateFile({ file: values.file });
+      if (!upload?.file_uri) throw new Error('The private source image upload did not complete. Please select the image and try again.');
       setState(current => ({ ...current, activity: 'Handing the inscription to our server' }));
       const publicAuth = { walletAddress: wallet.address, paymentSignature: payment.signature, requestId, sessionSecret };
-      const response = await base44.functions.invoke('mintInscribedNft', { action: 'startBackground', requestId, name: values.name, symbol: values.symbol, details: values.details, mimeType: values.file.type, totalSize: values.file.size, imageUri: file_uri, publicAuth });
+      const response = await base44.functions.invoke('mintInscribedNft', { action: 'startBackground', requestId, name: values.name, symbol: values.symbol, details: values.details, mimeType: values.file.type, totalSize: values.file.size, sourceUri: upload.file_uri, publicAuth });
       if (response.data?.error || !response.data?.job) throw new Error(response.data?.error || 'The inscription could not be queued.');
       applyRecord(response.data.job);
     } catch (error) {
