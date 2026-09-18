@@ -5,6 +5,7 @@ import PublicLaunchForm from '@/components/launch/PublicLaunchForm';
 import PublicLaunchResult from '@/components/launch/PublicLaunchResult';
 import PublicLaunchPreview from '@/components/launch/PublicLaunchPreview';
 import WalletButton from '@/components/wallet/WalletButton';
+import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import usePublicPumpLaunch from '@/hooks/usePublicPumpLaunch';
 
 export default function PublicLaunch() {
@@ -15,5 +16,6 @@ export default function PublicLaunch() {
       <div><div className="mb-7"><h2 className="font-display text-3xl font-bold tracking-tight">Launch from your wallet</h2><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Connect Phantom and create a pump.fun coin linked to an on-chain inscription. You remain the creator and approve the Solana transaction.</p></div><PublicLaunchForm state={state} /><PublicLaunchResult result={state.result} /></div>
       <PublicLaunchPreview input={state.input} wallet={state.wallet} />
     </div>
+    <ValidateBottomBar />
   </div>;
 }
