@@ -27,7 +27,7 @@ export default async function(req: Request): Promise<Response> {
       const owned = await base44.asServiceRole.entities.Profile.filter({ walletAddress: data.walletAddress });
       const used = await base44.asServiceRole.entities.Profile.filter({ handle });
       if (used.some(profile => profile.walletAddress !== data.walletAddress)) return Response.json({ error: 'That handle is already taken.' }, { status: 409 });
-      const values = { walletAddress: data.walletAddress, handle, displayName, bio, avatarUrl: String(data.avatarUrl || '') };
+      const values = { walletAddress: data.walletAddress, handle, displayName, bio, avatarUrl: String(data.avatarUrl || ''), bannerUrl: String(data.bannerUrl || '') };
       const profile = owned[0] ? await base44.asServiceRole.entities.Profile.update(owned[0].id, values) : await base44.asServiceRole.entities.Profile.create(values);
       return Response.json({ profile });
     }

@@ -8,7 +8,7 @@ export default function ProfileOnboarding({ address, provider, onCreated }) {
   const [form, setForm] = useState({ handle: '', displayName: '', bio: '' });
   const [avatar, setAvatar] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const submit = async e => { e.preventDefault(); setBusy(true); setError('');
-    try { const avatarUrl = await uploadSocialMedia(avatar); const { profile } = await runWalletAction(provider, 'createProfile', { walletAddress: address, ...form, avatarUrl }); onCreated(profile); }
+    try { const avatarUrl = await uploadSocialMedia(avatar); const { profile } = await runWalletAction(provider, 'createProfile', { walletAddress: address, ...form, avatarUrl, bannerUrl: '' }); onCreated(profile); }
     catch (err) { setError(err.response?.data?.error || err.message); } finally { setBusy(false); }
   };
   return <section className="rounded-2xl border border-primary/25 bg-card/80 p-6 text-left gold-glow">

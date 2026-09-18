@@ -7,6 +7,7 @@ import PostCard from '@/components/social/PostCard';
 import { Button } from '@/components/ui/button';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 import useSocialFeed from '@/hooks/useSocialFeed';
+import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 
 export default function Feed() {
   const { address, provider, connect, connecting } = usePhantomWallet(); const { posts, profiles, profile, loading, addPost, saveProfile } = useSocialFeed(address);
@@ -14,5 +15,5 @@ export default function Feed() {
     {!address && <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 text-center"><p className="text-sm">Connect your wallet to create a profile and post.</p><Button onClick={connect} disabled={connecting} className="mt-4">Connect Phantom</Button></div>}
     {address && !loading && !profile && <ProfileOnboarding address={address} provider={provider} onCreated={saveProfile} />}{address && profile && <PostComposer address={address} provider={provider} onPosted={addPost} />}
     {loading ? <div className="flex justify-center py-16"><Loader2 className="animate-spin text-primary" /></div> : posts.length ? <div className="space-y-4">{posts.map(post => <PostCard key={post.id} post={post} profile={profiles[post.authorWallet]} />)}</div> : <div className="py-16 text-center text-muted-foreground"><MessageSquare className="mx-auto h-8 w-8" /><p className="mt-3 text-sm">No posts yet. The first word is yours.</p></div>}
-  </main></div>;
+  </main><ValidateBottomBar /></div>;
 }

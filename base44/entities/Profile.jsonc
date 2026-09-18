@@ -17,6 +17,9 @@
     },
     "avatarUrl": {
       "type": "string"
+    },
+    "bannerUrl": {
+      "type": "string"
     }
   },
   "required": [

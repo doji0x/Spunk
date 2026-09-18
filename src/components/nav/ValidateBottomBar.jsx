@@ -1,14 +1,19 @@
 import React from 'react';
-import { Github, Plus, Rocket, ShieldCheck } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { MessageSquare, Plus, Rocket, ShieldCheck, User } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 
 export default function ValidateBottomBar() {
-  return <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-    <div className="mx-auto grid h-16 max-w-lg grid-cols-4">
-      <Link to="/" aria-label="Verify" className="relative flex h-full items-center justify-center text-primary"><span className="absolute top-1.5 h-1 w-1 rounded-full bg-primary" /><ShieldCheck className="h-6 w-6" /></Link>
-      <div className="relative flex items-center justify-center"><Link to="/inscribe" aria-label="Inscribe an NFT" className="gold-glow absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-95"><Plus className="h-7 w-7" strokeWidth={2.5} /></Link></div>
-      <Link to="/launch" aria-label="Launch a coin" className="flex h-full items-center justify-center text-muted-foreground transition hover:text-primary"><Rocket className="h-6 w-6" /></Link>
-      <a href="https://github.com/doji0x/validate" target="_blank" rel="noreferrer" aria-label="Documentation" className="flex h-full items-center justify-center text-muted-foreground transition hover:text-primary"><Github className="h-6 w-6" /></a>
-    </div>
+  const { pathname } = useLocation();
+  const { address } = usePhantomWallet();
+  const tabs = [
+    { to: '/', label: 'Verify', icon: ShieldCheck, active: pathname === '/' },
+    { to: '/inscribe', label: 'Inscribe', icon: Plus, active: pathname === '/inscribe' },
+    { to: '/launch', label: 'Launch', icon: Rocket, active: pathname === '/launch' },
+    { to: '/feed', label: 'Feed', icon: MessageSquare, active: pathname === '/feed' },
+    { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User, active: pathname.startsWith('/profile/') }
+  ];
+  return <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+    <div className="mx-auto grid h-16 max-w-lg grid-cols-5">{tabs.map(tab => { const Icon = tab.icon; return <Link key={tab.label} to={tab.to} aria-label={tab.label} className={`relative flex h-full flex-col items-center justify-center gap-1 transition ${tab.active ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}>{tab.active && <span className="absolute top-1.5 h-1 w-1 rounded-full bg-primary" />}<Icon className="h-5 w-5" /><span className="text-[9px] font-medium">{tab.label}</span></Link>; })}</div>
   </nav>;
 }
