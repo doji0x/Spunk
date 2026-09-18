@@ -99,10 +99,10 @@ export default async function(req: Request): Promise<Response> {
     const internalAgent = input.action === 'startBackground' && input.agentRequest === true && String(input.internalAuthorization || '') === secrets.get('INSCRIPTION_API_KEY');
     if (input.agentRequest === true && !internalAgent) return Response.json({ error: 'Unauthorized agent request.' }, { status: 401 });
     if (internalAgent && (input.mint || input.destination || input.signerSecretName)) return Response.json({ error: 'Agent inscriptions cannot select a mint, destination, or signer.' }, { status: 400 });
-    // Admin inscriptions always sign with the dedicated admin wallet. Internal agent jobs are forced to the public wallet.
+    // Admin and internal agent inscriptions use the dedicated admin wallet; public jobs stay on the public wallet.
     const requestedSecretName = String(input.signerSecretName || '');
     const workerSignsPublic = isAdmin && requestedSecretName === publicWalletSecretName;
-    const walletSecretName = internalAgent || workerSignsPublic || !isAdmin ? publicWalletSecretName : adminWalletSecretName;
+    const walletSecretName = internalAgent ? adminWalletSecretName : workerSignsPublic || !isAdmin ? publicWalletSecretName : adminWalletSecretName;
     const walletBytes = parseWallet(secrets.get(walletSecretName), walletSecretName);
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
