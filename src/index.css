@@ -85,6 +85,8 @@
   .gold-glow { box-shadow: 0 0 0 1px hsl(42 96% 56% / 0.35), 0 0 32px -8px hsl(42 96% 56% / 0.45); }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }
+  .social-shimmer { background: linear-gradient(100deg, hsl(var(--muted)) 25%, hsl(var(--border)) 50%, hsl(var(--muted)) 75%); background-size: 200% 100%; animation: social-shimmer 1.6s ease-in-out infinite; }
+  @keyframes social-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 }
 
 
