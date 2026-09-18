@@ -1,5 +1,6 @@
 import React from 'react';
 import { Archive, BadgeCheck, Palette } from 'lucide-react';
+import InscribedCoinStory from '@/components/punks/InscribedCoinStory';
 
 const principles = [
   {
@@ -35,6 +36,7 @@ export default function CurationPreservation() {
         <p className="mt-3 text-xs leading-5 text-muted-foreground">{text}</p>
       </article>)}
     </div>
+    <InscribedCoinStory />
     <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:p-6">
       <p className="font-mono text-[9px] tracking-[0.18em] text-primary">THE WORK BEHIND EVERY INSCRIPTION</p>
       <h3 className="mt-2 font-display text-xl font-semibold">Preservation is a process—not a pointer.</h3>
