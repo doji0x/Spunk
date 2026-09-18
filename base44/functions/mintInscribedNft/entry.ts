@@ -133,12 +133,21 @@ export default async function(req: Request): Promise<Response> {
       if (!await accountExists(rpcUrl, inscriptionAccount[0].toString())) {
         await sendWithFreshBlockhash(initializeFromMint(umi, { mintAccount: mintKey }), umi, () => accountExists(rpcUrl, inscriptionAccount[0].toString()));
       }
+      const metadata = Buffer.from(JSON.stringify({ name, symbol, description, imageSize: totalSize, imageMime: input.mimeType }));
       if (!await accountExists(rpcUrl, associatedInscriptionAccount[0].toString())) {
-        const metadata = Buffer.from(JSON.stringify({ name, symbol, description }));
         const builder = new TransactionBuilder()
           .add(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: metadata, associatedTag: null, offset: 0 }))
           .add(initializeAssociatedInscription(umi, { inscriptionAccount, inscriptionMetadataAccount, associatedInscriptionAccount, associationTag: tag }));
         await sendWithFreshBlockhash(builder, umi, () => accountExists(rpcUrl, associatedInscriptionAccount[0].toString()));
+      }
+      const currentMetadata = await accountData(rpcUrl, inscriptionAccount[0].toString());
+      if (currentMetadata) {
+        const value = metadata.length < currentMetadata.length ? Buffer.concat([metadata, Buffer.alloc(currentMetadata.length - metadata.length, 32)]) : metadata;
+        if (!currentMetadata.equals(value)) for (let offset = 0; offset < value.length; offset += writeChunkBytes) {
+          const chunk = new Uint8Array(value.subarray(offset, offset + writeChunkBytes));
+          const applied = () => chunkMatches(rpcUrl, inscriptionAccount[0].toString(), offset, chunk);
+          if (!await applied()) await sendWithFreshBlockhash(writeData(umi, { inscriptionAccount, inscriptionMetadataAccount, value: chunk, associatedTag: null, offset }), umi, applied);
+        }
       }
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
       const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
@@ -160,7 +169,12 @@ export default async function(req: Request): Promise<Response> {
       const address = inscriptionAccount[0].toString();
       const current = await accountData(rpcUrl, address);
       if (!current) return Response.json({ error: 'The on-chain metadata inscription was not found.' }, { status: 409 });
-      const encoded = Buffer.from(JSON.stringify({ name, symbol, description }));
+      let progressFields = {};
+      try {
+        const stored = JSON.parse(current.toString().trim());
+        if (Number.isInteger(stored.imageSize) && stored.imageSize > 0) progressFields = { imageSize: stored.imageSize, imageMime: stored.imageMime };
+      } catch { /* Older metadata may not include inscription progress fields. */ }
+      const encoded = Buffer.from(JSON.stringify({ name, symbol, description, ...progressFields }));
       const value = encoded.length < current.length ? Buffer.concat([encoded, Buffer.alloc(current.length - encoded.length, 32)]) : encoded;
       for (let offset = 0; offset < value.length; offset += writeChunkBytes) {
         const chunk = new Uint8Array(value.subarray(offset, offset + writeChunkBytes));
