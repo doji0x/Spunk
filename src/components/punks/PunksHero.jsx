@@ -1,0 +1,13 @@
+import React from 'react';
+import { Image } from '@/components/ui/image';
+
+const LOGO = 'https://media.base44.com/images/public/6aa8d3c82020abebe308c467/8d0945030_solana_pixel_avatar_under_1mb.png';
+
+export default function PunksHero() {
+  return <section className="pb-16 text-center sm:pb-20">
+    <Image src={LOGO} alt="Solana Cypher Punks" className="mx-auto h-36 w-36 rounded-3xl border border-primary/25 object-cover shadow-2xl shadow-primary/10 ring-1 ring-primary/20 sm:h-44 sm:w-44" />
+    <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 font-mono text-[9px] tracking-[0.16em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" />SOLANA CYPHER PUNKS</div>
+    <h1 className="mx-auto mt-5 max-w-2xl font-display text-[46px] font-bold leading-[0.98] tracking-[-3px] sm:text-[70px] sm:tracking-[-4px]">The pinnacle of<br /><span className="gold-text">curation on-chain.</span></h1>
+    <p className="mx-auto mt-7 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">Punks is a curated canon of Solana Cypher Punks built for permanent provenance. Every selected work preserves its complete image bytes on Solana, transforming cyberpunk culture into an immutable, independently verifiable record that cannot be replaced, redirected, or erased.</p>
+  </section>;
+}

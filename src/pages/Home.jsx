@@ -10,6 +10,8 @@ import ValidationAbout from '@/components/ValidationAbout';
 import InscriptionExamples from '@/components/InscriptionExamples';
 import SupportToken from '@/components/SupportToken';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
+import PunksHero from '@/components/punks/PunksHero';
+import { Image } from '@/components/ui/image';
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -34,15 +36,16 @@ export default function Home() {
   return <div className="validate-surface flex min-h-screen flex-col pb-24 text-foreground">
     <ValidateHeader onLearn={() => setAbout(true)} />
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
-      <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 font-mono text-[9px] tracking-[0.16em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" />DON’T TRUST. VERIFY.</div>
-      <h1 className="font-display text-[48px] font-bold leading-[0.98] tracking-[-3px] sm:text-[72px] sm:tracking-[-4px]">Is it really<br /><span className="gold-text">on-chain?</span></h1>
-      <p className="mx-auto mb-8 mt-6 max-w-md text-sm leading-6 text-muted-foreground">Anyone can claim it. The chain can prove it.<br />Verify that a token’s image actually lives on Solana.</p>
-      <ValidationForm onValidate={validate} loading={loading} /><InscriptionExamples onValidate={validate} disabled={loading} /><ValidationResult result={result} />
-      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[9px] text-muted-foreground"><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />ACTUAL IMAGE BYTES</span><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />NO OFF-CHAIN SHORTCUTS</span></div>
-      <ValidationExplainer />
-      <CurationPreservation />
+      <PunksHero />
+      <section className="border-t border-primary/20 pt-14 sm:pt-16" aria-labelledby="verify-heading">
+        <div className="mb-7"><p className="font-mono text-[9px] tracking-[0.18em] text-primary">PROVENANCE TOOL</p><h2 id="verify-heading" className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">Verify an inscription</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">Confirm that a token’s complete image bytes live on Solana—not behind a mutable off-chain link.</p></div>
+        <ValidationForm onValidate={validate} loading={loading} /><InscriptionExamples onValidate={validate} disabled={loading} /><ValidationResult result={result} />
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[9px] text-muted-foreground"><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />ACTUAL IMAGE BYTES</span><span className="flex items-center gap-1.5"><Check size={11} className="text-primary" />NO OFF-CHAIN SHORTCUTS</span></div>
+        <ValidationExplainer />
+        <CurationPreservation />
+      </section>
     </main>
-    <footer className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 border-t border-border px-4 py-7 text-center text-[10px] text-muted-foreground"><div className="flex w-full items-center justify-between"><span className="font-display font-semibold tracking-wider text-foreground">VALIDATE</span><button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-primary">Metaplex + Solana v1 + LibrePlex <ArrowUpRight size={12} /></button></div><nav aria-label="External links" className="flex items-center gap-4"><a href="https://github.com/doji0x/validate" target="_blank" rel="noreferrer" className="hover:text-primary">Docs</a><a href="https://x.com/humanevolvd?s=11" target="_blank" rel="noreferrer" className="hover:text-primary">X</a><span className="font-mono">BUILT ON SOLANA</span></nav><SupportToken /></footer>
+    <footer className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 border-t border-border px-4 py-7 text-center text-[10px] text-muted-foreground"><div className="flex w-full items-center justify-between"><span className="flex items-center gap-2 font-display font-semibold tracking-wider text-foreground"><Image src="https://media.base44.com/images/public/6aa8d3c82020abebe308c467/8d0945030_solana_pixel_avatar_under_1mb.png" alt="Punks" className="h-7 w-7 rounded-md ring-1 ring-primary/30" />PUNKS</span><button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-primary">Metaplex + Solana v1 + LibrePlex <ArrowUpRight size={12} /></button></div><nav aria-label="External links" className="flex items-center gap-4"><a href="https://github.com/doji0x/validate" target="_blank" rel="noreferrer" className="hover:text-primary">Docs</a><a href="https://x.com/humanevolvd?s=11" target="_blank" rel="noreferrer" className="hover:text-primary">X</a><span className="font-mono">SOLANA CYPHER PUNKS</span></nav><SupportToken /></footer>
     <ValidateBottomBar />
     <ValidationAbout open={about} onOpenChange={setAbout} />
   </div>;
