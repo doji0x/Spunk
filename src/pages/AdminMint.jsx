@@ -5,6 +5,7 @@ import { base44 } from '@/api/base44Client';
 import MintForm from '@/components/admin/MintForm';
 import MintStatus from '@/components/admin/MintStatus';
 import PumpLaunchPanel from '@/components/admin/PumpLaunchPanel';
+import BackgroundMintJobs from '@/components/admin/BackgroundMintJobs';
 import useInscribedMint from '@/hooks/useInscribedMint';
 
 export default function AdminMint() {
@@ -18,7 +19,7 @@ export default function AdminMint() {
   return <div className="validate-surface min-h-screen text-foreground">
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl"><div className="mx-auto flex h-14 max-w-2xl items-center gap-2 px-2"><Link to="/" aria-label="Close mint console" className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-card"><X className="h-5 w-5" /></Link><div className="flex-1"><p className="font-mono text-[10px] leading-none tracking-[0.3em] text-primary">ADMIN · MAINNET</p><h1 className="font-display font-semibold leading-tight">Inscription console</h1></div><Link to="/admin/mints" className="flex h-9 items-center gap-2 rounded-full border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground"><History size={15} />History</Link></div></header>
     <main className="mx-auto max-w-2xl px-4 py-8 pb-24 sm:px-6"><div className="mb-7 flex items-start gap-3"><span className="rounded-2xl bg-primary p-2.5 text-primary-foreground"><ShieldCheck size={20} /></span><div><h2 className="font-display text-3xl font-bold tracking-tight">Mint an inscribed NFT</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Creates one NFT owned by the server mint wallet and writes its metadata and complete image bytes directly on-chain. No Arweave, IPFS, or external image URL is used.</p></div></div>
-      <MintForm onMint={mint.start} busy={mint.busy} pending={mint.pending} onResume={mint.resume} initialMint={selectedMint} /><MintStatus {...mint} onResume={mint.resume} /><PumpLaunchPanel inscriptionBusy={mint.busy} />
+      <MintForm onMint={mint.start} busy={mint.busy} pending={mint.pending} onResume={mint.resume} initialMint={selectedMint} /><BackgroundMintJobs /><MintStatus {...mint} onResume={mint.resume} /><PumpLaunchPanel inscriptionBusy={mint.busy || mint.pending?.status === 'in_progress'} />
     </main>
   </div>;
 }

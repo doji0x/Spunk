@@ -1,0 +1,137 @@
+{
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "*/5 * * * *",
+      "one_time_date": null,
+      "timezone": "America/Los_Angeles",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "background_inscription_queue",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "process_first": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "processInscriptionJobs",
+            "args": {}
+          },
+          "then": "wait_second",
+          "x-base44": {
+            "title": "Process queued mints",
+            "description": "First minute"
+          }
+        }
+      },
+      {
+        "wait_second": {
+          "wait": "PT1M",
+          "then": "process_second",
+          "x-base44": {
+            "title": "Wait one minute"
+          }
+        }
+      },
+      {
+        "process_second": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "processInscriptionJobs",
+            "args": {}
+          },
+          "then": "wait_third",
+          "x-base44": {
+            "title": "Continue queued mints",
+            "description": "Second minute"
+          }
+        }
+      },
+      {
+        "wait_third": {
+          "wait": "PT1M",
+          "then": "process_third",
+          "x-base44": {
+            "title": "Wait one minute"
+          }
+        }
+      },
+      {
+        "process_third": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "processInscriptionJobs",
+            "args": {}
+          },
+          "then": "wait_fourth",
+          "x-base44": {
+            "title": "Continue queued mints",
+            "description": "Third minute"
+          }
+        }
+      },
+      {
+        "wait_fourth": {
+          "wait": "PT1M",
+          "then": "process_fourth",
+          "x-base44": {
+            "title": "Wait one minute"
+          }
+        }
+      },
+      {
+        "process_fourth": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "processInscriptionJobs",
+            "args": {}
+          },
+          "then": "wait_fifth",
+          "x-base44": {
+            "title": "Continue queued mints",
+            "description": "Fourth minute"
+          }
+        }
+      },
+      {
+        "wait_fifth": {
+          "wait": "PT1M",
+          "then": "process_fifth",
+          "x-base44": {
+            "title": "Wait one minute"
+          }
+        }
+      },
+      {
+        "process_fifth": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "processInscriptionJobs",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Continue queued mints",
+            "description": "Fifth minute"
+          }
+        }
+      }
+    ]
+  },
+  "name": "Background Inscription Queue",
+  "description": "Advances queued admin image inscriptions every minute using a durable five-minute cycle."
+}

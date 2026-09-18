@@ -10,7 +10,8 @@ import ImageUploadField from '@/components/admin/ImageUploadField';
 export default function MintForm({ onMint, busy, pending, onResume, initialMint }) {
   const { values, change, recovery } = useMintRecoveryForm(pending, initialMint);
   const { name, symbol, details, file, mint } = values;
-  const locked = busy || Boolean(pending);
+  const hasBackgroundSource = Boolean(pending?.imageUri);
+  const locked = busy || hasBackgroundSource;
   const submit = event => {
     event.preventDefault();
     if (!recovery.loading) onMint(values);
@@ -23,10 +24,10 @@ export default function MintForm({ onMint, busy, pending, onResume, initialMint 
     <div className="space-y-2"><Label htmlFor="mint">Recover existing mint <span className="font-normal text-[#7e8773]">(optional)</span></Label><Input id="mint" value={mint} onChange={event => change('mint', event.target.value)} placeholder="Paste a partially completed mint address" disabled={locked} /><p className="text-xs text-[#7e8773]">Use this to finish a mint whose NFT exists but inscription did not complete.</p></div>
     {recovery.loading && <p role="status" className="text-xs text-muted-foreground">Loading saved mint details…</p>}
     {recovery.error && <p role="alert" className="text-xs text-destructive">{recovery.error}</p>}
-    {pending && <p className="text-xs text-muted-foreground">Saved details, original image, and confirmed progress restored. Resume continues the same NFT.</p>}
-    {!pending && values.requestId && <p className="text-xs text-muted-foreground">Saved details restored. Select the original image; completed chunks will be checked on-chain and skipped.</p>}
-    <ImageUploadField disabled={locked} onFileChange={file => change('file', file)} restoredFile={pending ? file : null} />
+    {hasBackgroundSource && <p className="text-xs text-muted-foreground">This mint and its private source image are stored in the background queue. You can safely close the browser.</p>}
+    {!hasBackgroundSource && values.requestId && <p className="text-xs text-muted-foreground">Saved details restored. Select the original image to move this existing mint into the background queue.</p>}
+    {!hasBackgroundSource && <ImageUploadField disabled={locked} onFileChange={file => change('file', file)} restoredFile={null} />}
     <div className="space-y-2"><Label htmlFor="details">Details</Label><Textarea id="details" maxLength={1000} rows={5} value={details} onChange={event => change('details', event.target.value)} placeholder="Description and details stored in the NFT inscription" required disabled={locked || recovery.loading} /></div>
-    <Button type={pending ? 'button' : 'submit'} onClick={pending ? onResume : undefined} disabled={busy || recovery.loading || !file} className="gold-glow w-full rounded-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Minting on mainnet…</> : pending ? 'Resume inscription' : mint.trim() ? 'Recover existing NFT' : 'Mint one inscribed NFT'}</Button>
+    <Button type={hasBackgroundSource ? 'button' : 'submit'} onClick={hasBackgroundSource ? onResume : undefined} disabled={busy || recovery.loading || (!hasBackgroundSource && !file) || (hasBackgroundSource && pending?.status === 'in_progress')} className="gold-glow w-full rounded-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting background mint…</> : hasBackgroundSource && pending?.status === 'failed' ? 'Retry in background' : hasBackgroundSource ? 'Running in background' : mint.trim() ? 'Recover in background' : 'Start background mint'}</Button>
   </form>;
 }

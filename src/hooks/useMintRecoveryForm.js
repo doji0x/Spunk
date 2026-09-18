@@ -10,8 +10,7 @@ export default function useMintRecoveryForm(pending, initialMint = '') {
   }, [initialMint, Boolean(pending)]);
   useEffect(() => {
     if (!pending) return;
-    const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }[pending.mimeType] || 'png';
-    setValues({ name: pending.name || '', symbol: pending.symbol || '', details: pending.details || '', mint: pending.mint || '', requestId: pending.requestId, file: new File([pending.bytes], pending.fileName || `recovered-image.${extension}`, { type: pending.mimeType }) });
+    setValues({ name: pending.name || '', symbol: pending.symbol || '', details: pending.description || '', mint: pending.mint || '', requestId: pending.requestId, file: null });
     setRecovery({ loading: false, error: '' });
   }, [pending?.requestId, pending?.mint]);
   useEffect(() => {

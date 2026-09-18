@@ -111,11 +111,14 @@ export default async function(req: Request): Promise<Response> {
       if (input.action === 'start' && input.mint) return Response.json({ error: 'Public recovery is limited to the saved inscription attempt.' }, { status: 400 });
     }
 
-    if (input.action === 'start') {
+    if (input.action === 'start' || input.action === 'startBackground') {
+      const background = input.action === 'startBackground';
       const name = String(input.name || '').trim();
       const symbol = String(input.symbol || '').trim().toUpperCase();
       const description = String(input.details || '').trim();
       const totalSize = Number(input.totalSize);
+      const imageUri = background ? String(input.imageUri || '').trim() : '';
+      if (background && (!imageUri || imageUri.length > 1000)) return Response.json({ error: 'A private source image is required for background minting.' }, { status: 400 });
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The image must be 1 MB or smaller.' }, { status: 400 });
       if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, or WebP image.' }, { status: 400 });
@@ -164,7 +167,12 @@ export default async function(req: Request): Promise<Response> {
       const masterEditionAccount = findMasterEditionPda(umi, { mint: mintKey });
       const editionState = await masterEditionState(rpcUrl, masterEditionAccount[0].toString());
       const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
-      return Response.json({ mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null });
+      const prepared = { mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null };
+      if (!background) return Response.json(prepared);
+      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', imageUri, totalSize, imageMime: input.mimeType, batchBytes, offset: 0, confirmedOffsets: [], ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
+      const matches = await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId });
+      const job = matches[0] ? await base44.asServiceRole.entities.MintRecord.update(matches[0].id, recordData) : await base44.asServiceRole.entities.MintRecord.create(recordData);
+      return Response.json({ ...prepared, job });
     }
 
     if (input.action === 'updateMetadata') {

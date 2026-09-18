@@ -36,6 +36,36 @@
     },
     "errorMessage": {
       "type": "string"
+    },
+    "imageUri": {
+      "type": "string",
+      "description": "Private source image used by the background inscription worker."
+    },
+    "totalSize": {
+      "type": "number"
+    },
+    "imageMime": {
+      "type": "string"
+    },
+    "batchBytes": {
+      "type": "number"
+    },
+    "offset": {
+      "type": "number",
+      "default": 0
+    },
+    "confirmedOffsets": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "maxSupply": {
+      "type": "string"
     }
   },
   "required": [
