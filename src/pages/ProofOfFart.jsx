@@ -5,6 +5,7 @@ import { base44 } from '@/api/base44Client';
 import ValidateHeader from '@/components/ValidateHeader';
 import ValidationForm from '@/components/ValidationForm';
 import ValidationResult from '@/components/ValidationResult';
+import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 
 export default function ProofOfFart() {
   const [loading, setLoading] = useState(false);
@@ -43,5 +44,6 @@ export default function ProofOfFart() {
       </section>
       <div className="mt-10 text-center"><Link to="/" className="text-xs text-muted-foreground transition hover:text-primary">Back to Punks</Link></div>
     </main>
+    <ValidateBottomBar />
   </div>;
 }
