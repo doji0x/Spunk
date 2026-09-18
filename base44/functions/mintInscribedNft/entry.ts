@@ -177,7 +177,12 @@ export default async function(req: Request): Promise<Response> {
       if (!background) return Response.json(prepared);
       const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', imageUri, totalSize, imageMime: input.mimeType, batchBytes, offset: 0, confirmedOffsets: [], ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
       const matches = await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId });
-      const job = matches[0] ? await base44.asServiceRole.entities.MintRecord.update(matches[0].id, recordData) : await base44.asServiceRole.entities.MintRecord.create(recordData);
+      const existing = matches[0];
+      // Re-submitting the same mint must never rewind saved progress; only a different source image restarts at 0.
+      const resumed = existing && existing.totalSize === totalSize
+        ? { ...recordData, offset: Number(existing.offset) || 0, confirmedOffsets: Array.isArray(existing.confirmedOffsets) ? existing.confirmedOffsets : [] }
+        : recordData;
+      const job = existing ? await base44.asServiceRole.entities.MintRecord.update(existing.id, resumed) : await base44.asServiceRole.entities.MintRecord.create(recordData);
       return Response.json({ ...prepared, job });
     }
 

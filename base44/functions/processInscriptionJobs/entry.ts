@@ -26,6 +26,8 @@ export default async function(req: Request): Promise<Response> {
         events.push({ at: new Date().toISOString(), message, details: String(details) });
         if (events.length > maxEvents) events.splice(0, events.length - maxEvents);
       };
+      let offset = Math.max(0, Number(job.offset) || 0);
+      const confirmed = new Set(Array.isArray(job.confirmedOffsets) ? job.confirmedOffsets : []);
       try {
         if (!job.imageUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
         log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint}`);
@@ -34,8 +36,6 @@ export default async function(req: Request): Promise<Response> {
         if (!fileResponse.ok) throw new Error('The private source image could not be loaded.');
         const bytes = Buffer.from(await fileResponse.arrayBuffer());
         if (bytes.length !== job.totalSize) throw new Error('The stored source image size no longer matches this mint.');
-        let offset = Math.max(0, Number(job.offset) || 0);
-        const confirmed = new Set(Array.isArray(job.confirmedOffsets) ? job.confirmedOffsets : []);
         let processed = 0;
         while (offset < bytes.length && processed < chunksPerJob) {
           const chunk = bytes.subarray(offset, Math.min(offset + job.batchBytes, bytes.length));
@@ -88,7 +88,8 @@ export default async function(req: Request): Promise<Response> {
         } else results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset });
       } catch (error) {
         log('Background job stopped', error.message || 'Unknown failure');
-        await base44.asServiceRole.entities.MintRecord.update(job.id, { status: 'failed', errorMessage: error.message || 'Background inscription stopped.', processedAt: new Date().toISOString(), signerPublicKey: signer, signerSecretName, events });
+        // Keep every chunk this run confirmed so the retry continues from the last confirmed offset.
+        await base44.asServiceRole.entities.MintRecord.update(job.id, { status: 'failed', errorMessage: error.message || 'Background inscription stopped.', processedAt: new Date().toISOString(), signerPublicKey: signer, signerSecretName, offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), events });
         results.push({ id: job.id, mint: job.mint, status: 'failed', error: error.message });
       }
     }
