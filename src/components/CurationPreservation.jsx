@@ -35,5 +35,14 @@ export default function CurationPreservation() {
         <p className="mt-3 text-xs leading-5 text-muted-foreground">{text}</p>
       </article>)}
     </div>
+    <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:p-6">
+      <p className="font-mono text-[9px] tracking-[0.18em] text-primary">THE WORK BEHIND EVERY INSCRIPTION</p>
+      <h3 className="mt-2 font-display text-xl font-semibold">Preservation is a process—not a pointer.</h3>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">Every image must be prepared as exact bytes, divided into safe on-chain writes, submitted across multiple Solana transactions, and confirmed piece by piece. The completed inscription is then reconstructed from the chain and checked against the original so collectors can verify that the artwork—not merely a link to it—was preserved correctly.</p>
+      <div className="mt-5 grid gap-3 font-mono text-[9px] tracking-[0.12em] text-muted-foreground sm:grid-cols-4">
+        <span>01 · PREPARE BYTES</span><span>02 · WRITE IN CHUNKS</span><span>03 · CONFIRM ON-CHAIN</span><span>04 · RECONSTRUCT + VERIFY</span>
+      </div>
+      <p className="mt-5 border-t border-primary/15 pt-5 text-sm leading-6 text-foreground"><strong className="text-primary">The original remains the original.</strong> Once an inscription is completed and finalized, that minted piece cannot be swapped out for a different work. It may be replicated into another mint, but every replica has its own distinct address and on-chain history—it can never replace the provenance of the first.</p>
+    </div>
   </section>;
 }
