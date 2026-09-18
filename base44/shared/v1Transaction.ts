@@ -41,24 +41,17 @@ function imageSlice(bytes) {
     if (hex.startsWith('89504e470d0a1a0a')) {
       let end = offset + 8;
       while (end + 12 <= bytes.length) {
-        const size = bytes.readUInt32BE(end);
-        const type = bytes.subarray(end + 4, end + 8).toString();
+        const size = bytes.readUInt32BE(end); const type = bytes.subarray(end + 4, end + 8).toString();
         end += 12 + size;
         if (end > bytes.length) break;
-        if (type === 'IEND') return { mime: 'image/png', bytes: bytes.subarray(offset, end) };
+        if (type === 'IEND') return { mime: 'image/png', bytes: bytes.subarray(offset, end), partial: false };
       }
+      return { mime: 'image/png', bytes: bytes.subarray(offset), partial: true };
     }
-    if (hex.startsWith('ffd8ff')) {
-      const end = bytes.indexOf(Buffer.from([0xff, 0xd9]), offset + 3);
-      if (end !== -1) return { mime: 'image/jpeg', bytes: bytes.subarray(offset, end + 2) };
-    }
-    if (/^474946383[79]61/.test(hex)) {
-      const end = bytes.indexOf(0x3b, offset + 6);
-      if (end !== -1) return { mime: 'image/gif', bytes: bytes.subarray(offset, end + 1) };
-    }
+    if (hex.startsWith('ffd8ff')) { const end = bytes.indexOf(Buffer.from([0xff, 0xd9]), offset + 3); return { mime: 'image/jpeg', bytes: end === -1 ? bytes.subarray(offset) : bytes.subarray(offset, end + 2), partial: end === -1 }; }
+    if (/^474946383[79]61/.test(hex)) { const end = bytes.indexOf(0x3b, offset + 6); return { mime: 'image/gif', bytes: end === -1 ? bytes.subarray(offset) : bytes.subarray(offset, end + 1), partial: end === -1 }; }
     if (bytes.subarray(offset, offset + 4).toString() === 'RIFF' && bytes.subarray(offset + 8, offset + 12).toString() === 'WEBP') {
-      const size = bytes.readUInt32LE(offset + 4) + 8;
-      if (size >= 12 && offset + size <= bytes.length) return { mime: 'image/webp', bytes: bytes.subarray(offset, offset + size) };
+      const size = bytes.readUInt32LE(offset + 4) + 8; return { mime: 'image/webp', bytes: offset + size <= bytes.length ? bytes.subarray(offset, offset + size) : bytes.subarray(offset), partial: offset + size > bytes.length };
     }
   }
   return null;
@@ -69,7 +62,7 @@ async function formatMatch(match, confidence, signature) {
   return {
     status: 'valid', standard: 'Solana V1 Transaction Inscription', confidence,
     image: `data:${match.mime};base64,${match.bytes.toString('base64')}`,
-    mime: match.mime, bytes: match.bytes.length, hash: Buffer.from(digest).toString('hex'),
+    mime: match.mime, bytes: match.bytes.length, partial: match.partial, hash: Buffer.from(digest).toString('hex'),
     signature, checkedAt: new Date().toISOString()
   };
 }

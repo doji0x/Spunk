@@ -2,7 +2,7 @@ import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { Buffer } from 'node:buffer';
 import { solanaRpc, indexedAsset } from './solanaServices.ts';
 import { programAddress, derive, linkedMint, resolveIndexedMint, decodeMetadata, associatedAddress, inscriptionTag } from './inscriptionMetadata.ts';
-import { detectImageMime } from './imageMime.ts';
+import { detectImageMime, isCompleteImage } from './imageMime.ts';
 
 export async function verifyInscription(address) {
   try {
@@ -70,7 +70,7 @@ export async function verifyInscription(address) {
     if (!mime) return { status: 'unknown', message: 'An image-tagged inscription exists, but its bytes are not a supported PNG, JPEG, GIF, or WebP image.' };
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const indexer = await indexedAsset(found.mint);
-    return { status: 'valid', ...found, image: `data:${mime};base64,${bytes.toString('base64')}`, mime, bytes: bytes.length, hash: Buffer.from(digest).toString('hex'), checkedAt: new Date().toISOString(), standard: 'Metaplex Inscription', indexer };
+    return { status: 'valid', ...found, image: `data:${mime};base64,${bytes.toString('base64')}`, mime, bytes: bytes.length, partial: !isCompleteImage(bytes, mime), hash: Buffer.from(digest).toString('hex'), checkedAt: new Date().toISOString(), standard: 'Metaplex Inscription', indexer };
   } catch (error) {
     return { status: 'unknown', message: error.message || 'Unable to verify this address right now.' };
   }

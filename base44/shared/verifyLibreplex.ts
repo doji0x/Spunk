@@ -79,13 +79,14 @@ function imageSlice(bytes) {
         const size = bytes.readUInt32BE(end); const type = bytes.subarray(end + 4, end + 8).toString();
         end += 12 + size;
         if (end > bytes.length) break;
-        if (type === 'IEND') return { mime: 'image/png', bytes: bytes.subarray(offset, end) };
+        if (type === 'IEND') return { mime: 'image/png', bytes: bytes.subarray(offset, end), partial: false };
       }
+      return { mime: 'image/png', bytes: bytes.subarray(offset), partial: true };
     }
-    if (hex.startsWith('ffd8ff')) { const end = bytes.indexOf(Buffer.from([0xff, 0xd9]), offset + 3); if (end !== -1) return { mime: 'image/jpeg', bytes: bytes.subarray(offset, end + 2) }; }
-    if (/^474946383[79]61/.test(hex)) { const end = bytes.lastIndexOf(0x3b); if (end > offset) return { mime: 'image/gif', bytes: bytes.subarray(offset, end + 1) }; }
+    if (hex.startsWith('ffd8ff')) { const end = bytes.indexOf(Buffer.from([0xff, 0xd9]), offset + 3); return { mime: 'image/jpeg', bytes: end === -1 ? bytes.subarray(offset) : bytes.subarray(offset, end + 2), partial: end === -1 }; }
+    if (/^474946383[79]61/.test(hex)) { const end = bytes.lastIndexOf(0x3b); return { mime: 'image/gif', bytes: end > offset ? bytes.subarray(offset, end + 1) : bytes.subarray(offset), partial: end <= offset }; }
     if (bytes.subarray(offset, offset + 4).toString() === 'RIFF' && bytes.subarray(offset + 8, offset + 12).toString() === 'WEBP') {
-      const size = bytes.readUInt32LE(offset + 4) + 8; if (size >= 12 && offset + size <= bytes.length) return { mime: 'image/webp', bytes: bytes.subarray(offset, offset + size) };
+      const size = bytes.readUInt32LE(offset + 4) + 8; return { mime: 'image/webp', bytes: offset + size <= bytes.length ? bytes.subarray(offset, offset + size) : bytes.subarray(offset), partial: offset + size > bytes.length };
     }
   }
   return null;
@@ -126,7 +127,7 @@ export async function verifyLibreplexMint(mint) {
   if (!match) return { status: 'unknown', message: 'A LibrePlex image inscription exists, but its bytes are not a complete PNG, JPEG, GIF, or WebP image.' };
   const hash = createHash('sha256').update(match.bytes).digest('hex');
   const indexer = await indexedAsset(mint);
-  return { status: 'valid', standard: 'LibrePlex Inscription', mint, inscriptionAccount, imageAccount: decoded.inscriptionData, image: `data:${match.mime};base64,${match.bytes.toString('base64')}`, mime: match.mime, bytes: match.bytes.length, hash, immutable: decoded.authority === systemProgram, checkedAt: new Date().toISOString(), indexer };
+  return { status: 'valid', standard: 'LibrePlex Inscription', mint, inscriptionAccount, imageAccount: decoded.inscriptionData, image: `data:${match.mime};base64,${match.bytes.toString('base64')}`, mime: match.mime, bytes: match.bytes.length, partial: match.partial, hash, immutable: decoded.authority === systemProgram, checkedAt: new Date().toISOString(), indexer };
 }
 
 export async function verifyLibreplex(input) {
