@@ -15,7 +15,7 @@ export default function MintForm({ onMint, busy, pending, onResume, initialMint 
     event.preventDefault();
     if (!recovery.loading) onMint(values);
   };
-  return <form onSubmit={submit} className="space-y-5 rounded-2xl border border-[#dce1d5] bg-white p-6 shadow-sm">
+  return <form onSubmit={submit} className="space-y-5 rounded-2xl border border-border bg-card/60 p-5 sm:p-6">
     <div className="grid gap-5 sm:grid-cols-2">
       <div className="space-y-2"><Label htmlFor="name">NFT name</Label><Input id="name" maxLength={32} value={name} onChange={event => change('name', event.target.value)} required disabled={locked || recovery.loading} /></div>
       <div className="space-y-2"><Label htmlFor="symbol">Ticker</Label><Input id="symbol" maxLength={10} value={symbol} onChange={event => change('symbol', event.target.value.toUpperCase())} required disabled={locked || recovery.loading} /></div>
@@ -27,6 +27,6 @@ export default function MintForm({ onMint, busy, pending, onResume, initialMint 
     {!pending && values.requestId && <p className="text-xs text-muted-foreground">Saved details restored. Select the original image; completed chunks will be checked on-chain and skipped.</p>}
     <ImageUploadField disabled={locked} onFileChange={file => change('file', file)} restoredFile={pending ? file : null} />
     <div className="space-y-2"><Label htmlFor="details">Details</Label><Textarea id="details" maxLength={1000} rows={5} value={details} onChange={event => change('details', event.target.value)} placeholder="Description and details stored in the NFT inscription" required disabled={locked || recovery.loading} /></div>
-    <Button type={pending ? 'button' : 'submit'} onClick={pending ? onResume : undefined} disabled={busy || recovery.loading || !file} className="w-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Minting on mainnet…</> : pending ? 'Resume inscription' : mint.trim() ? 'Recover existing NFT' : 'Mint one inscribed NFT'}</Button>
+    <Button type={pending ? 'button' : 'submit'} onClick={pending ? onResume : undefined} disabled={busy || recovery.loading || !file} className="gold-glow w-full rounded-full">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Minting on mainnet…</> : pending ? 'Resume inscription' : mint.trim() ? 'Recover existing NFT' : 'Mint one inscribed NFT'}</Button>
   </form>;
 }

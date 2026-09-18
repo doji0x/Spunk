@@ -21,7 +21,7 @@ export default function PumpLaunchPanel({ inscriptionBusy }) {
       <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="pump-name">Coin name</Label><Input id="pump-name" required maxLength={32} value={input.name} disabled={disabled} placeholder="Your coin name" onChange={e => setInput({ ...input, name: e.target.value })} /></div><div className="space-y-2"><Label htmlFor="pump-symbol">Ticker</Label><Input id="pump-symbol" required maxLength={10} value={input.symbol} disabled={disabled} placeholder="TICKER" onChange={e => setInput({ ...input, symbol: e.target.value.toUpperCase() })} /></div></div>
       <AdvancedLaunchOptions input={input} setInput={setInput} options={options} settings={settings} disabled={disabled} />
       {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={disabled || invalid} className="w-full bg-launch-brand text-primary-foreground hover:bg-launch-brand/90">{busy ? <><Loader2 size={16} className="mr-2 animate-spin" />Verifying and launching…</> : 'Create, buy, and launch on mainnet'}</Button>
+      <Button type="submit" disabled={disabled || invalid} className="gold-glow w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90">{busy ? <><Loader2 size={16} className="mr-2 animate-spin" />Verifying and launching…</> : 'Create, buy, and launch on mainnet'}</Button>
     </form>}
     {attempt && <PumpLaunchResult attempt={attempt} busy={busy} error={error} onResume={launch} onConfigureSharing={configureSharing} onReset={reset} />}
   </section>;
