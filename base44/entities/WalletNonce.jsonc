@@ -1,0 +1,44 @@
+{
+  "name": "WalletNonce",
+  "type": "object",
+  "properties": {
+    "walletAddress": {
+      "type": "string",
+      "description": "Wallet the nonce was issued to."
+    },
+    "nonce": {
+      "type": "string",
+      "description": "Random single-use value included in the signed message."
+    },
+    "used": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "walletAddress",
+    "nonce"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

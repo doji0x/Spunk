@@ -1,7 +1,8 @@
 import { base44 } from '@/api/base44Client';
 
 export async function runWalletAction(provider, action, data) {
-  const message = JSON.stringify({ action, timestamp: Date.now(), data });
+  const { data: issued } = await base44.functions.invoke('socialWallet', { action: 'nonce', walletAddress: data.walletAddress });
+  const message = JSON.stringify({ action, timestamp: Date.now(), nonce: issued.nonce, data });
   const signed = await provider.signMessage(new TextEncoder().encode(message), 'utf8');
   const signature = btoa(String.fromCharCode(...signed.signature));
   const response = await base44.functions.invoke('socialWallet', { message, signature });
