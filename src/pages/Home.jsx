@@ -12,6 +12,7 @@ import SupportToken from '@/components/SupportToken';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
 import { Image } from '@/components/ui/image';
+import { Link } from 'react-router-dom';
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -38,6 +39,7 @@ export default function Home() {
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
       <PunksHero />
       <CurationPreservation />
+      <section className="mt-16 rounded-3xl border border-primary/25 bg-card p-7 text-left sm:p-9" aria-labelledby="proof-of-fart-heading"><p className="font-mono text-[9px] tracking-[0.18em] text-primary">ON-CHAIN AUDIO EXPERIMENT</p><h2 id="proof-of-fart-heading" className="mt-3 font-display text-2xl font-bold tracking-tight">Proof of Fart</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">See how a Fly Brain agent inscribes an MP3 fart directly onto Solana, then verify the audio bytes yourself.</p><Link to="/proof-of-fart" className="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Explore Proof of Fart <ArrowUpRight size={14} /></Link></section>
       <section className="mt-16 border-t border-primary/20 pt-14 sm:mt-20 sm:pt-16" aria-labelledby="verify-heading">
         <div className="mb-7"><p className="font-mono text-[9px] tracking-[0.18em] text-primary">PROVENANCE TOOL</p><h2 id="verify-heading" className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">Verify an inscription</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">Confirm that a token’s complete image bytes live on Solana—not behind a mutable off-chain link.</p></div>
         <ValidationForm onValidate={validate} loading={loading} /><InscriptionExamples onValidate={validate} disabled={loading} /><ValidationResult result={result} />

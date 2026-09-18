@@ -19,6 +19,7 @@ import PublicLaunch from '@/pages/PublicLaunch';
 import PublicInscribe from '@/pages/PublicInscribe';
 import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
+import ProofOfFart from '@/pages/ProofOfFart';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
 
 const AuthenticatedApp = () => {
@@ -52,6 +53,7 @@ const AuthenticatedApp = () => {
       <Route path="/inscribe" element={<PublicInscribe />} />
       <Route path="/feed" element={<Feed />} />
       <Route path="/profile/:wallet" element={<SocialProfile />} />
+      <Route path="/proof-of-fart" element={<ProofOfFart />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
