@@ -60,6 +60,6 @@ export async function inscriptionHistoryAccounts(metadataKey) {
 export async function indexedAsset(mint) {
   try {
     const asset = await heliusRpc('getAsset', { id: mint });
-    return asset?.id === mint ? { status: 'found', mint: asset.id, name: String(asset.content?.metadata?.name || '').slice(0, 200) } : { status: 'not_found' };
+    return asset?.id === mint ? { status: 'found', mint: asset.id, name: String(asset.content?.metadata?.name || '').slice(0, 200), uri: typeof asset.content?.json_uri === 'string' ? asset.content.json_uri : '' } : { status: 'not_found' };
   } catch { return { status: 'unavailable' }; }
 }
