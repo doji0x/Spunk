@@ -1,11 +1,15 @@
-# Validate
+# Punks
 
-> **Less trust. More truth.** Inscribe images on Solana, verify the bytes are really there, and launch pump.fun coins with metadata that can evolve after launch.
+**Version 2.0.0** · [What's New](#whats-new)
 
-Validate combines two capabilities built on the same on-chain inscription foundation:
+> **Less trust. More truth.** Punks (Solana Cypher Punks) is a curation platform for one-of-one on-chain works: inscribe images permanently on Solana, verify the bytes are really there, launch pump.fun coins with inscribed metadata, and share the work in a wallet-native social feed.
+
+Punks combines these capabilities built on the same on-chain inscription foundation:
 
 1. **Inscribe and verify images on-chain.** Upload an image, write its bytes on-chain in ordered version 1 transactions through the Metaplex inscription program, and finalize a single-supply NFT whose image lives entirely in Solana account data. Every inscription is read back and hash-verified before it is called complete. See [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex).
-2. **Launch pump.fun coins with mutable, on-chain-anchored metadata.** The coin's URI points to Validate's resolver, which reads the current source inscription state. While the controlled source inscription remains updateable, its image, name, ticker, and description can change without replacing the launched coin. See [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins).
+2. **Launch pump.fun coins with mutable, on-chain-anchored metadata.** The coin's URI points to the app's resolver, which reads the current source inscription state. While the controlled source inscription remains updateable, its image, name, ticker, and description can change without replacing the launched coin. See [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins).
+3. **Curate and share on a wallet-native social layer.** Collectors and creators claim a wallet profile, publish posts, and browse a shared feed. Every social write is authorized by a wallet signature over a server-issued single-use nonce, with per-wallet rate limiting.
+4. **Inscribe and launch without an admin.** Public inscribe and public launch pages let any connected wallet pay for and drive its own inscription and coin launch.
 
 Verification is the proof layer beneath both capabilities. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
 
@@ -18,6 +22,7 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 
 ## Table of Contents
 
+- [What's New](#whats-new)
 - [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex)
 - [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins)
 - [Purpose](#purpose)
@@ -38,11 +43,44 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 - [Troubleshooting](#troubleshooting)
 - [Reference Documentation](#reference-documentation)
 
+## What's New
+
+### 2.0.0 — Punks
+
+**Curation platform and brand**
+
+- Rebranded from Validate to **Punks** (Solana Cypher Punks), reframed as a curation platform for one-of-one on-chain works by collectors and creators.
+- Dark, gold-accented design system on Space Grotesk and JetBrains Mono, with shimmer skeleton loaders instead of spinners.
+- Five-tab bottom navigation: Punks, Inscribe, Launch, Feed, Profile.
+
+**Wallet-native social layer**
+
+- Phantom wallet connection, wallet profiles (handle, display name, bio, avatar, banner), a shared post feed, and per-wallet profile pages.
+- Every signed social action requires a server-issued single-use nonce, and posting is rate limited to one post per minute per wallet.
+
+**Public inscribe and public launch**
+
+- Any connected wallet can pay for and drive its own inscription and pump.fun launch, using a public signing wallet separate from the admin wallet.
+- Dual-wallet architecture: `ADMIN_MINT_WALLET_SECRET_KEY` signs all admin actions, `MINT_WALLET_SECRET_KEY` signs public ones.
+
+**Durable background inscription worker**
+
+- Inscriptions no longer depend on an open browser tab. A `MintRecord` job stores the private source image, chunk size, offset, and confirmed offsets, and a scheduled worker writes chunks server-side.
+- Append-only, per-record event log with the signing wallet's public key, exposed in the admin console and exportable as JSON or CSV.
+- The source image is archived to private storage when a mint completes, with a signed download link from the admin console.
+- **Resume correctness:** re-submitting a mint keeps its saved offset and confirmed offsets — only a different source image size restarts at zero — and a failed run persists every chunk it confirmed, so retries continue from the last confirmed offset instead of restarting the progress bar.
+
+**Verification and metadata**
+
+- Partial-inscription preview with progressive reveal and an on-chain-verified placeholder when the browser cannot decode partial bytes.
+- The metadata resolver serves a real composited PNG for incomplete images so external platforms render partial status correctly.
+- Metadata repair flow to rewrite name, ticker, and description on an existing inscription.
+
 ## Purpose
 
 Conventional token metadata can point to mutable websites, gateways, or third-party storage. A metadata field containing an image URL does not prove that the image itself is stored on-chain.
 
-Validate answers a narrower, independently verifiable question:
+Punks answers a narrower, independently verifiable question:
 
 > **Do finalized Solana data or supported inscription accounts contain a complete image connected to this mint or transaction?**
 
@@ -52,6 +90,10 @@ The application deliberately distinguishes fungible token metadata from NFT-styl
 
 - Inscribes images on-chain with Metaplex across ordered version 1 transactions
 - Writes image bytes in resumable chunks, so an interrupted inscription continues on the same mint
+- Runs inscriptions server-side in a durable background worker that survives closed browser tabs
+- Keeps an append-only event log per mint, exportable as JSON or CSV, and archives the source image on completion
+- Lets any connected wallet inscribe and launch publicly, or an admin do so from the console
+- Provides wallet profiles and a shared social feed, with signature- and nonce-authorized writes
 - Confirms every inscription by reading the bytes back from chain and matching the SHA-256 digest
 - Finalizes a single-supply Master Edition, and can bind an inscription permanently to a fungible token
 - Accepts Solana mint addresses and transaction signatures
@@ -230,7 +272,7 @@ A mismatch is a hard failure: the run stops and explicitly instructs the operato
 
 Standard token launches commonly point to content-addressed or otherwise fixed metadata. That is useful for permanence, but it prevents a creator from changing the displayed image, name, ticker, or description after launch.
 
-Validate introduces a different model: **a stable coin URI backed by controlled, on-chain inscription data**.
+Punks introduces a different model: **a stable coin URI backed by controlled, on-chain inscription data**.
 
 ### How it works
 
@@ -353,14 +395,26 @@ Server-side providers
 ```text
 src/
 ├── pages/
-│   ├── Home.jsx                         # Public verification experience
-│   └── AdminMint.jsx                    # Admin inscription and launch console
+│   ├── Home.jsx                         # Punks landing and verification experience
+│   ├── PublicInscribe.jsx               # Wallet-paid public inscription
+│   ├── PublicLaunch.jsx                 # Wallet-paid public pump.fun launch
+│   ├── Feed.jsx                         # Shared social feed
+│   ├── SocialProfile.jsx                # Wallet profile page
+│   ├── AdminMint.jsx                    # Admin inscription and launch console
+│   └── AdminMints.jsx                   # Admin mint history and recovery
+├── contexts/
+│   └── PhantomWalletContext.jsx         # Wallet connection state
 ├── components/
 │   ├── ValidationForm.jsx               # Address input and client validation
 │   ├── ValidationResult.jsx             # Combined four-check result
+│   ├── social/                          # Feed, composer, profile panels, skeletons
 │   └── admin/
 │       ├── MintForm.jsx                 # Inscription details and image input
-│       ├── MintStatus.jsx               # Progress and recovery controls
+│       ├── MintStatus.jsx               # Progress, recovery controls, and logs
+│       ├── BackgroundMintJobs.jsx        # Live background job progress
+│       ├── InscriptionLog.jsx            # Durable server-side event log
+│       ├── MintLogExport.jsx             # JSON/CSV export and image archive
+│       ├── MetadataRepairForm.jsx        # Rewrite on-chain metadata fields
 │       ├── PumpLaunchPanel.jsx           # pump.fun launch form
 │       ├── AdvancedLaunchOptions.jsx     # Guided market and fee settings
 │       ├── PairAssetSelect.jsx           # Supported pair selector
@@ -377,10 +431,15 @@ base44/
 │   ├── validateInscription/             # Public validation endpoint
 │   ├── findInscriptionExamples/         # Verified discovery endpoint
 │   ├── inscriptionMetadata/             # Metadata and image resolver
-│   ├── mintInscribedNft/                # Admin inscription pipeline
+│   ├── mintInscribedNft/                # Admin and public inscription pipeline
+│   ├── processInscriptionJobs/          # Background chunk-writing worker
+│   ├── mintArchiveLink/                 # Signed archive download links
+│   ├── socialWallet/                    # Nonce issuance and signed social writes
 │   ├── launchPumpCoin/                  # Admin pump.fun launch endpoint
+│   ├── publicPumpLaunch/                # Wallet-paid pump.fun launch endpoint
 │   └── confirmLaunches/                 # Pending-launch settlement
 ├── workflows/
+│   ├── Background Inscription Queue.jsonc  # Scheduled inscription worker
 │   └── Confirm Pump Launches.jsonc      # Scheduled confirmation
 └── shared/
     ├── verifyAllInscriptions.ts         # Combined verification orchestration
@@ -439,7 +498,8 @@ Configure secrets in the Base44 app's **Secrets** settings. Never add secret val
 | `SOLANA_RPC_URL_DEVNET` | Optional Solana devnet endpoint used for non-launch development. |
 | `INSCRIPTION_API_URL` | Helius-compatible RPC/indexing endpoint used for discovery and historical resolution. |
 | `INSCRIPTION_API_KEY` | Credential for the inscription/indexing endpoint. |
-| `MINT_WALLET_SECRET_KEY` | Admin mint-wallet key used to sign inscription writes and pump.fun launches and retain control of editable sources. |
+| `ADMIN_MINT_WALLET_SECRET_KEY` | Admin wallet key. Signs **all** admin inscription writes, finalizations, and pump.fun launches, and retains control of editable sources. |
+| `MINT_WALLET_SECRET_KEY` | Public wallet key used to sign wallet-paid public inscriptions and launches. |
 
 Both configured providers must target Solana mainnet. Example discovery verifies the mainnet genesis hash before scanning accounts.
 
@@ -455,7 +515,23 @@ Public metadata and image resolver used by launched coins. It validates the requ
 
 ### `mintInscribedNft`
 
-Admin-only, resumable inscription pipeline. It prepares the Metaplex NFT and inscription accounts, writes image bytes in ordered chunks, verifies the completed image, finalizes the single-supply edition, and supports recovery on the same mint.
+Resumable inscription pipeline. It prepares the Metaplex NFT and inscription accounts, writes image bytes in ordered chunks, verifies the completed image, finalizes the single-supply edition, and supports recovery on the same mint. Admin requests always sign with the dedicated admin wallet; public requests sign with the public wallet after their payment is verified.
+
+### `processInscriptionJobs`
+
+Background worker for queued `MintRecord` jobs. It loads the private source image, writes a bounded number of chunks per run, records every step in the record's durable event log with the signing wallet's public key, verifies the finished image against its SHA-256 digest, finalizes the edition, and archives the source image. Progress is preserved across failures so a retry continues from the last confirmed offset.
+
+### `mintArchiveLink`
+
+Issues a short-lived signed URL for a mint's archived or source image, for admin download.
+
+### `socialWallet`
+
+Issues single-use wallet nonces and verifies wallet signatures for profile and post writes, enforcing a one-post-per-minute-per-wallet limit.
+
+### `publicPumpLaunch`
+
+Wallet-paid pump.fun launch endpoint for the public launch page, mirroring the admin launch flow with payment verification instead of admin authentication.
 
 ### `launchPumpCoin`
 
@@ -564,4 +640,4 @@ Run the app through `base44 dev`, confirm the project is linked to the correct B
 
 ---
 
-**Validate** — Less trust. More truth.
+**Punks** — Less trust. More truth. · v2.0.0
