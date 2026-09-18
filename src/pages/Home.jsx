@@ -17,8 +17,15 @@ export default function Home() {
     try {
       const { data } = await base44.functions.invoke('validateInscription', { address });
       if (data.status === 'valid') {
-        const images = Object.values(data.checks || {}).filter(check => check?.status === 'valid').map(check => check.image);
-        try { await Promise.all(images.map(src => { const image = new window.Image(); image.src = src; return image.decode(); })); } catch { setResult({ ...data, status: 'unknown', message: 'An inscription exists, but its image bytes could not be decoded. It may be incomplete or corrupted.' }); return; }
+        const checks = await Promise.all(Object.entries(data.checks || {}).map(async ([kind, check]) => {
+          if (check?.status !== 'valid' || !check.image) return [kind, check];
+          try {
+            const image = new window.Image(); image.src = check.image; await image.decode();
+            return [kind, check];
+          } catch { return [kind, { ...check, image: null, undecodable: true }]; }
+        }));
+        setResult({ ...data, checks: Object.fromEntries(checks) });
+        return;
       }
       setResult(data);
     } catch { setResult({ status: 'unknown', message: 'The verification service is unavailable. Please try again shortly.' }); }

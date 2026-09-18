@@ -14,10 +14,10 @@ export async function verifyAllInscriptions(address) {
   const v1Trusted = address.length > 44 || (v1.status === 'valid' && v1.commitment === 'VALIDATE-v1' && v1.mintAuthorized === true && v1.mint === address);
   const valid = metaplex.status === 'valid' || libreplex.status === 'valid' || held.status === 'valid' || v1Trusted;
   const unknown = all.some(check => check.status === 'unknown');
-  const primary = metaplex.status === 'valid' ? metaplex : libreplex.status === 'valid' ? libreplex : v1Trusted ? v1 : held.status === 'valid' ? held : {};
+  const primary = metaplex.status === 'valid' ? 'metaplex' : libreplex.status === 'valid' ? 'libreplex' : v1Trusted ? 'v1' : held.status === 'valid' ? 'held' : null;
   return {
-    ...primary,
     status: valid ? 'valid' : unknown ? 'unknown' : 'invalid',
+    primary,
     reason: !valid && !unknown ? 'No supported on-chain image inscription was found.' : undefined,
     message: !valid && unknown ? 'One or more inscription checks could not be completed.' : undefined,
     checks: { metaplex, v1, libreplex, held }

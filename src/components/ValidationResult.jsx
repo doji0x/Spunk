@@ -6,7 +6,7 @@ export default function ValidationResult({ result }) {
   if (!result) return null;
   const valid = result.status === 'valid';
   const invalid = result.status === 'invalid';
-  const legacyCheck = result.checks?.metaplex || result;
+  const legacyCheck = result.checks?.metaplex || { status: 'unknown', message: 'This check was not returned.' };
   const v1Check = result.checks?.v1 || { status: 'unknown', message: 'This check was not returned.' };
   const libreplexCheck = result.checks?.libreplex || { status: 'unknown', message: 'This check was not returned.' };
   const heldCheck = result.checks?.held || { status: 'unknown', message: 'This check was not returned.' };
