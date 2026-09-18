@@ -8,6 +8,6 @@ export default function PunksHero() {
     <Image src={LOGO} alt="Solana Cypher Punks" className="mx-auto h-36 w-36 rounded-3xl border border-primary/25 object-cover shadow-2xl shadow-primary/10 ring-1 ring-primary/20 sm:h-44 sm:w-44" />
     <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 font-mono text-[9px] tracking-[0.16em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" />SOLANA CYPHER PUNKS</div>
     <h1 className="mx-auto mt-5 max-w-2xl font-display text-[46px] font-bold leading-[0.98] tracking-[-3px] sm:text-[70px] sm:tracking-[-4px]">The on-chain canon<br /><span className="gold-text">for true collectors.</span></h1>
-    <p className="mx-auto mt-7 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">Punks is a curation platform for true collectors. Every selected Cypher Punk is a one-of-one piece preserved in full on-chain, its complete image bytes anchored to Solana. No mutable media. No substituted files. No trust required. What enters the canon remains exactly what was collected.</p>
+    <p className="mx-auto mt-7 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">Punks is a curation platform for collectors and creators. The work itself is preserved — its complete image bytes inscribed on Solana, not stored behind a link. No mutable media. No substituted files. No trust required. What enters the canon remains exactly what was collected.</p>
   </section>;
 }
