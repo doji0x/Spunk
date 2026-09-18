@@ -1,7 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
-import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash } from '../../shared/mintWallet.ts';
+import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash, adminWalletSecretName, publicWalletSecretName } from '../../shared/mintWallet.ts';
 import { recoverableMintSigner, chunkMatches } from './recovery.ts';
 import { mintInscriptionFormat, storedInscriptionTag } from './inscriptionFormat.ts';
 import { preparePublicMintPayment, verifyPublicMintPayment } from './publicPayment.ts';
@@ -93,15 +93,17 @@ export default async function(req: Request): Promise<Response> {
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
     const umi = createUmi(rpcUrl).use(mplTokenMetadata()).use(mplInscription());
-    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
+    const user = input.action === 'publicQuote' ? null : await base44.auth.me().catch(() => null);
+    const isAdmin = user?.role === 'admin';
+    // The admin mint panel signs with its own dedicated keypair, separate from the public inscription wallet.
+    const walletSecretName = isAdmin ? adminWalletSecretName : publicWalletSecretName;
+    const walletBytes = parseWallet(secrets.get(walletSecretName), walletSecretName);
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
     if (input.action === 'publicQuote') {
       const quote = await preparePublicMintPayment(rpcUrl, String(input.walletAddress || ''), umi.identity.publicKey.toString(), String(input.requestId || ''), String(input.sessionHash || ''), Number(input.totalSize));
       return Response.json(quote);
     }
-    const user = await base44.auth.me().catch(() => null);
-    const isAdmin = user?.role === 'admin';
     const publicActions = ['start', 'append', 'finalize', 'transfer'];
     let publicWallet = '';
     if (!isAdmin) {

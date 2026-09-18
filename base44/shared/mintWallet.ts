@@ -1,17 +1,20 @@
 import bs58 from 'npm:bs58@6.0.0';
 
-export function parseWallet(value) {
+export const adminWalletSecretName = 'ADMIN_MINT_WALLET_SECRET_KEY';
+export const publicWalletSecretName = 'MINT_WALLET_SECRET_KEY';
+
+export function parseWallet(value, secretName = publicWalletSecretName) {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error('MINT_WALLET_SECRET_KEY is missing or empty. Re-save a 64-byte Solana keypair in Secrets.');
+    throw new Error(`${secretName} is missing or empty. Re-save a 64-byte Solana keypair in Secrets.`);
   }
   const normalized = value.trim();
   let bytes;
   try {
     bytes = normalized.startsWith('[') ? Uint8Array.from(JSON.parse(normalized)) : bs58.decode(normalized);
   } catch {
-    throw new Error('MINT_WALLET_SECRET_KEY must be a base58 keypair or a JSON array of 64 bytes.');
+    throw new Error(`${secretName} must be a base58 keypair or a JSON array of 64 bytes.`);
   }
-  if (bytes.length !== 64) throw new Error('MINT_WALLET_SECRET_KEY must contain exactly 64 bytes.');
+  if (bytes.length !== 64) throw new Error(`${secretName} must contain exactly 64 bytes.`);
   return bytes;
 }
 
