@@ -4,6 +4,7 @@ import { Buffer } from 'node:buffer';
 import { parseWallet, assertMainnet, rpcRequest, getLatestBlockhash } from '../../shared/mintWallet.ts';
 import { recoverableMintSigner, chunkMatches } from './recovery.ts';
 import { mintInscriptionFormat, storedInscriptionTag } from './inscriptionFormat.ts';
+import { preparePublicMintPayment, verifyPublicMintPayment } from './publicPayment.ts';
 import { createUmi } from 'npm:@metaplex-foundation/umi-bundle-defaults@0.9.2';
 import { createSignerFromKeypair, generateSigner, percentAmount, publicKey, signerIdentity, TransactionBuilder } from 'npm:@metaplex-foundation/umi@0.9.2';
 import 'npm:@metaplex-foundation/umi@0.9.2/serializers';
@@ -88,9 +89,6 @@ async function sendWithFreshBlockhash(builder, umi, isApplied = null) {
 export default async function(req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    if (user.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 });
     const input = await req.json();
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
@@ -98,6 +96,20 @@ export default async function(req: Request): Promise<Response> {
     const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
+    if (input.action === 'publicQuote') {
+      const quote = await preparePublicMintPayment(rpcUrl, String(input.walletAddress || ''), umi.identity.publicKey.toString(), String(input.requestId || ''), String(input.sessionHash || ''), Number(input.totalSize));
+      return Response.json(quote);
+    }
+    const user = await base44.auth.me().catch(() => null);
+    const isAdmin = user?.role === 'admin';
+    const publicActions = ['start', 'append', 'finalize', 'transfer'];
+    let publicWallet = '';
+    if (!isAdmin) {
+      if (!publicActions.includes(input.action)) return Response.json({ error: user ? 'Forbidden' : 'Unauthorized' }, { status: user ? 403 : 401 });
+      const authorization = await verifyPublicMintPayment(rpcUrl, umi.identity.publicKey.toString(), input);
+      publicWallet = authorization.walletAddress;
+      if (input.action === 'start' && input.mint) return Response.json({ error: 'Public recovery is limited to the saved inscription attempt.' }, { status: 400 });
+    }
 
     if (input.action === 'start') {
       const name = String(input.name || '').trim();
@@ -215,7 +227,7 @@ export default async function(req: Request): Promise<Response> {
 
     if (input.action === 'transfer') {
       const mint = String(input.mint || '').trim();
-      const destination = String(input.destination || '').trim();
+      const destination = (publicWallet || String(input.destination || '')).trim();
       if (!mintPattern.test(mint) || !mintPattern.test(destination)) return Response.json({ error: 'Invalid mint or destination address.' }, { status: 400 });
       const mintKey = publicKey(mint);
       const destinationKey = publicKey(destination);

@@ -1,0 +1,6 @@
+const key = wallet => `validate-public-inscription:${wallet}`;
+const encode = bytes => { let value = ''; for (const byte of bytes) value += String.fromCharCode(byte); return btoa(value); };
+export function savePublicInscription(wallet, pending) { const { bytes, ...details } = pending; localStorage.setItem(key(wallet), JSON.stringify({ ...details, image: encode(bytes) })); }
+export function loadPublicInscription(wallet) { const saved = localStorage.getItem(key(wallet)); if (!saved) return null; const value = JSON.parse(saved); return { ...value, bytes: Uint8Array.from(atob(value.image), character => character.charCodeAt(0)), image: undefined }; }
+export function clearPublicInscription(wallet) { localStorage.removeItem(key(wallet)); }
+export function publicInscriptionProgress(pending) { if (!pending?.batchBytes) return 0; const bytes = (pending.confirmedOffsets || []).reduce((sum, offset) => sum + Math.min(pending.batchBytes, pending.bytes.length - offset), 0); return Math.round(bytes / pending.bytes.length * 100); }

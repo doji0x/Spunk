@@ -16,6 +16,7 @@ import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import PublicLaunch from '@/pages/PublicLaunch';
+import PublicInscribe from '@/pages/PublicInscribe';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
 
 const AuthenticatedApp = () => {
@@ -46,6 +47,7 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/launch" element={<PublicLaunch />} />
+      <Route path="/inscribe" element={<PublicInscribe />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
