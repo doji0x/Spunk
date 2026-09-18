@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 
-const address = '6A4mSvzKpgdVPcAs64wTi6iyqPiW2kCxduh1VhiApump';
+const address = '4Li8GmidzBf2qA7HGKhvSzaGqUhEv4w7ExsiXahRFqqp';
 
 export default function SupportToken() {
   const [copied, setCopied] = useState(false);
