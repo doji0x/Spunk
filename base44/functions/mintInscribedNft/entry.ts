@@ -96,7 +96,10 @@ export default async function(req: Request): Promise<Response> {
     const user = input.action === 'publicQuote' ? null : await base44.auth.me().catch(() => null);
     const isAdmin = user?.role === 'admin';
     // Admin inscriptions always sign with the dedicated admin wallet — no exceptions.
-    const walletSecretName = isAdmin ? adminWalletSecretName : publicWalletSecretName;
+    // The background worker may explicitly ask for the public wallet so public jobs keep their own signer.
+    const requestedSecretName = String(input.signerSecretName || '');
+    const workerSignsPublic = isAdmin && requestedSecretName === publicWalletSecretName;
+    const walletSecretName = isAdmin && !workerSignsPublic ? adminWalletSecretName : publicWalletSecretName;
     const walletBytes = parseWallet(secrets.get(walletSecretName), walletSecretName);
     const wallet = umi.eddsa.createKeypairFromSecretKey(walletBytes);
     umi.use(signerIdentity(createSignerFromKeypair(umi, wallet)));
@@ -108,13 +111,13 @@ export default async function(req: Request): Promise<Response> {
       const quote = await preparePublicMintPayment(rpcUrl, String(input.walletAddress || ''), umi.identity.publicKey.toString(), String(input.requestId || ''), String(input.sessionHash || ''), Number(input.totalSize));
       return Response.json(quote);
     }
-    const publicActions = ['start', 'append', 'finalize', 'transfer'];
+    const publicActions = ['start', 'startBackground', 'append', 'finalize', 'transfer'];
     let publicWallet = '';
     if (!isAdmin) {
       if (!publicActions.includes(input.action)) return Response.json({ error: user ? 'Forbidden' : 'Unauthorized' }, { status: user ? 403 : 401 });
       const authorization = await verifyPublicMintPayment(rpcUrl, umi.identity.publicKey.toString(), input);
       publicWallet = authorization.walletAddress;
-      if (input.action === 'start' && input.mint) return Response.json({ error: 'Public recovery is limited to the saved inscription attempt.' }, { status: 400 });
+      if (['start', 'startBackground'].includes(input.action) && input.mint) return Response.json({ error: 'Public recovery is limited to the saved inscription attempt.' }, { status: 400 });
     }
 
     if (input.action === 'start' || input.action === 'startBackground') {
@@ -175,7 +178,7 @@ export default async function(req: Request): Promise<Response> {
       const writtenBytes = await accountDataLength(rpcUrl, associatedInscriptionAccount[0].toString());
       const prepared = { mint: mintAddress, owner: umi.identity.publicKey.toString(), batchBytes, writtenBytes, gatewayUrl: uri, prepared: true, maxSupply: editionState?.maxSupply?.toString() ?? null, supply: editionState?.supply?.toString() ?? null };
       if (!background) return Response.json(prepared);
-      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', imageUri, totalSize, imageMime: input.mimeType, batchBytes, offset: 0, confirmedOffsets: [], ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
+      const recordData = { mint: mintAddress, requestId: input.requestId, name, symbol, description, owner: prepared.owner, status: 'in_progress', errorMessage: '', imageUri, totalSize, imageMime: input.mimeType, batchBytes, offset: 0, confirmedOffsets: [], signerPublicKey: prepared.owner, signerSecretName: walletSecretName, ...(publicWallet ? { destinationWallet: publicWallet } : {}), ...(prepared.maxSupply === null ? {} : { maxSupply: prepared.maxSupply }) };
       const matches = await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId });
       const existing = matches[0];
       // Re-submitting the same mint must never rewind saved progress; only a different source image restarts at 0.

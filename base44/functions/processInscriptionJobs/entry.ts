@@ -12,9 +12,7 @@ export default async function(req: Request): Promise<Response> {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     if (user.role !== 'admin') return Response.json({ error: 'Admin access required.' }, { status: 403 });
     const input = await req.json().catch(() => ({}));
-    const identity = await base44.functions.invoke('mintInscribedNft', { action: 'signer' });
-    const signer = identity.data?.signer || '';
-    const signerSecretName = identity.data?.secretName || '';
+    let lastSigner = '';
     const target = input.recordId ? await base44.asServiceRole.entities.MintRecord.get(String(input.recordId)).catch(() => null) : null;
     const jobs = input.recordId
       ? (target?.status === 'in_progress' ? [target] : [])
@@ -28,6 +26,11 @@ export default async function(req: Request): Promise<Response> {
       };
       let offset = Math.max(0, Number(job.offset) || 0);
       const confirmed = new Set(Array.isArray(job.confirmedOffsets) ? job.confirmedOffsets : []);
+      // Each job signs with the wallet stored on its own record: admin mints with the admin wallet, public mints with the public wallet.
+      const signerSecretName = job.signerSecretName || '';
+      const identity = await base44.functions.invoke('mintInscribedNft', { action: 'signer', signerSecretName });
+      const signer = identity.data?.signer || '';
+      lastSigner = signer || lastSigner;
       try {
         if (!job.imageUri || !Number.isInteger(job.totalSize) || !Number.isInteger(job.batchBytes)) continue;
         log('Worker run started', `signing wallet ${signer} (${signerSecretName}) · mint ${job.mint}`);
@@ -39,7 +42,7 @@ export default async function(req: Request): Promise<Response> {
         let processed = 0;
         while (offset < bytes.length && processed < chunksPerJob) {
           const chunk = bytes.subarray(offset, Math.min(offset + job.batchBytes, bytes.length));
-          const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: job.imageMime, data: chunk.toString('base64') });
+          const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: job.imageMime, data: chunk.toString('base64'), signerSecretName });
           if (response.data?.error || response.data?.nextOffset !== offset + chunk.length) {
             log('Chunk write failed', `offset ${offset} · ${response.data?.error || 'unexpected confirmation offset'}`);
             throw new Error(response.data?.error || 'A chunk did not confirm at the expected offset.');
@@ -67,12 +70,20 @@ export default async function(req: Request): Promise<Response> {
           }
           log('Verification passed', `SHA-256 ${expectedHash}`);
           if (job.maxSupply === '1') {
-            const finalized = await base44.functions.invoke('mintInscribedNft', { action: 'finalize', mint: job.mint });
+            const finalized = await base44.functions.invoke('mintInscribedNft', { action: 'finalize', mint: job.mint, signerSecretName });
             if (finalized.data?.error) {
               log('Finalize failed', finalized.data.error);
               throw new Error(finalized.data.error);
             }
             log('Master Edition finalized', `maxSupply 1 · edition ${finalized.data?.editionMint || 'printed'} · signer ${signer}`);
+          }
+          if (job.destinationWallet) {
+            const delivery = await base44.functions.invoke('mintInscribedNft', { action: 'transfer', mint: job.mint, destination: job.destinationWallet, signerSecretName });
+            if (delivery.data?.error) {
+              log('Delivery failed', delivery.data.error);
+              throw new Error(delivery.data.error);
+            }
+            log('NFT delivered', `mint ${job.mint} · ${job.destinationWallet}`);
           }
           let archivedImageUri = job.archivedImageUri || '';
           try {
@@ -93,7 +104,7 @@ export default async function(req: Request): Promise<Response> {
         results.push({ id: job.id, mint: job.mint, status: 'failed', error: error.message });
       }
     }
-    return Response.json({ processed: results.length, signer, results });
+    return Response.json({ processed: results.length, signer: lastSigner, results });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to process inscription jobs.' }, { status: 500 });
   }

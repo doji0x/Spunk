@@ -25,6 +25,10 @@
     "owner": {
       "type": "string"
     },
+    "destinationWallet": {
+      "type": "string",
+      "description": "Public wallet that paid for the mint and receives the finished NFT."
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -47,7 +51,7 @@
     },
     "signerPublicKey": {
       "type": "string",
-      "description": "Public key of the admin wallet that signs this mint's transactions."
+      "description": "Public key of the wallet that signs this mint's transactions."
     },
     "signerSecretName": {
       "type": "string",
