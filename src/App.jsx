@@ -13,6 +13,7 @@ import AdminMints from '@/pages/AdminMints';
 import AdminAstra from '@/pages/AdminAstra';
 import AdminAtomicV1Launch from '@/pages/AdminAtomicV1Launch';
 import AdminLaunchLinks from '@/pages/AdminLaunchLinks';
+import AdminMetadataOverride from '@/pages/AdminMetadataOverride';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -75,6 +76,9 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Flinks" replace />} />}>
         <Route path="/admin/links" element={<AdminLaunchLinks />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fmetadata" replace />} />}>
+        <Route path="/admin/metadata" element={<AdminMetadataOverride />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

@@ -7,6 +7,7 @@ import { assetUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { inscribedFields } from './inscribedFields.ts';
 import { cached, remember, rateLimited } from './guard.ts';
 import { confirmedPrefixLength, expectedImage, partialImage } from './partialImage.ts';
+import { activeOverride, overrideFields } from '../../shared/launchMetadataOverride.ts';
 
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 // Links stay editable after launch, so the shared window is short: terminals revalidate
@@ -42,9 +43,11 @@ export default async function(req: Request): Promise<Response> {
     const socialUrl = key => { const value = (url.searchParams.get(key) || '').trim(); if (!value || value.length > 200) return ''; try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''; } catch { return ''; } };
     const coin = (url.searchParams.get('coin') || '').trim();
     const hasCoin = asset === 'json' && mintPattern.test(coin);
-    let launchAttempt = null;
+    let launchAttempt = null, applied = {};
     if (asset === 'json') {
       const entities = createClientFromRequest(req).asServiceRole.entities;
+      // Admin-set off-chain override of the served name/symbol/description/image.
+      applied = overrideFields(await activeOverride(entities, mint, mintPattern.test(coin) ? coin : ''));
       if (hasCoin) {
         [launchAttempt] = await entities.PublicLaunchAttempt.filter({ coinMint: coin });
         if (!launchAttempt) [launchAttempt] = await entities.LaunchAttempt.filter({ coinMint: coin });
@@ -57,7 +60,7 @@ export default async function(req: Request): Promise<Response> {
     const socials = asset !== 'json' ? {} : hasCoin || launchAttempt
       ? { website: storedSocials.website || '', twitter: storedSocials.twitter || '', github: storedSocials.github || '' }
       : { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') };
-    const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:media-v2`;
+    const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:${JSON.stringify(applied)}:media-v2`;
     const hit = cached(cacheKey);
     if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -100,8 +103,11 @@ export default async function(req: Request): Promise<Response> {
     const fields = await inscribedFields(rootAccount, root, tag === 'image');
     const mediaType = tag === 'audio' || fields.mediaType === 'audio' ? 'audio' : 'image';
     const socialFields = Object.fromEntries(Object.entries(socials).filter(([, value]) => value));
-    const mediaFields = mediaType === 'audio' ? { mediaType, mediaMime: 'audio/mpeg', animation_url: assetUri(mint, 'audio'), ...(hasCover ? { image: imageUri(mint) } : {}), properties: { category: 'audio', files: [{ uri: assetUri(mint, 'audio'), type: 'audio/mpeg' }, ...(hasCover ? [{ uri: imageUri(mint), type: (await inscribedCoverMime(rootAccount)) }] : [])] } } : { mediaType, mediaMime: fields.mediaMime, image: imageUri(mint) };
-    const body = JSON.stringify({ ...fields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
+    const servedImage = applied.imageUrl || imageUri(mint);
+    const servedImageMime = applied.imageUrl ? (applied.imageMime || fields.mediaMime) : fields.mediaMime;
+    const mediaFields = mediaType === 'audio' ? { mediaType, mediaMime: 'audio/mpeg', animation_url: assetUri(mint, 'audio'), ...(hasCover || applied.imageUrl ? { image: servedImage } : {}), properties: { category: 'audio', files: [{ uri: assetUri(mint, 'audio'), type: 'audio/mpeg' }, ...(hasCover || applied.imageUrl ? [{ uri: servedImage, type: applied.imageUrl ? servedImageMime : (await inscribedCoverMime(rootAccount)) }] : [])] } } : { mediaType, mediaMime: servedImageMime, image: servedImage, properties: { category: 'image', files: [{ uri: servedImage, type: servedImageMime }] } };
+    const textFields = Object.fromEntries(['name', 'symbol', 'description'].filter(key => applied[key]).map(key => [key, applied[key]]));
+    const body = JSON.stringify({ ...fields, ...textFields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
     // Audio preparation may initialize the cover after the audio association: do not cache incomplete artwork discovery.
     if (mediaType === 'audio') return new Response(body, { headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
     // The launch attempt is saved just after the prepare-time fetch of this URI, so a

@@ -1,0 +1,95 @@
+{
+  "name": "LaunchMetadataOverride",
+  "type": "object",
+  "properties": {
+    "inscribedMint": {
+      "type": "string",
+      "description": "Inscribed NFT mint whose served metadata is overridden."
+    },
+    "coinMint": {
+      "type": "string",
+      "description": "Launched coin mint this override belongs to."
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "imageUrl": {
+      "type": "string",
+      "description": "Public image URL served in place of the inscribed image."
+    },
+    "imageMime": {
+      "type": "string"
+    },
+    "isActive": {
+      "type": "boolean",
+      "default": false,
+      "description": "Exactly one active record per coin mint drives the served metadata."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "set",
+        "clear"
+      ],
+      "default": "set"
+    },
+    "previousValues": {
+      "type": "object",
+      "description": "Served values replaced by this record, kept for the audit trail.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "imageMime": {
+          "type": "string"
+        }
+      }
+    },
+    "adminEmail": {
+      "type": "string",
+      "description": "Admin who made this change."
+    }
+  },
+  "required": [
+    "inscribedMint",
+    "coinMint",
+    "action"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

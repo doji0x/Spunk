@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, Link2, Loader2, CheckCircle2, Search } from 'lucide-react';
+import { X, Link2, Loader2, CheckCircle2, Search, FileCog } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,7 @@ export default function AdminLaunchLinks() {
         <Label htmlFor="coin-mint" className="text-xs text-muted-foreground">Coin mint address</Label>
         <div className="mt-1.5 flex gap-2"><Input id="coin-mint" value={coinMint} onChange={event => setCoinMint(event.target.value)} placeholder="Coin mint" className="font-mono text-xs" /><Button type="submit" disabled={state.busy || !coinMint.trim()} className="gap-2">{state.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}Find</Button></div>
       </form>
+      <Link to="/admin/metadata" className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary underline-offset-4 hover:underline"><FileCog className="h-3.5 w-3.5" />Override served name, image, or description</Link>
       {state.error && <p className="mt-3 text-sm text-destructive">{state.error}</p>}
       {found && <section className="mt-5 rounded-2xl border border-border bg-card p-5">
         <p className="font-mono text-[10px] tracking-[0.25em] text-primary">{sourceLabels[found.source] || 'Launch'} · {String(found.status).toUpperCase()}</p>
