@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import bs58 from 'npm:bs58@6.0.0';
-import { solanaRpc, recentAddressSignatures } from './solanaServices.ts';
+import { solanaRpc, recentAddressSignatures, earliestAddressSignatures } from './solanaServices.ts';
 
 const commitmentPrefix = Buffer.concat([Buffer.from('VALIDATE', 'ascii'), Buffer.from([1])]);
 const commitmentHeaderBytes = commitmentPrefix.length + 32 + 32;
@@ -124,7 +124,13 @@ export async function inspectV1Transaction(signature, expectedMint = null) {
 export async function findV1Inscription(input) {
   try {
     if (input.length > 44) return await inspectV1Transaction(input);
-    const signatures = await recentAddressSignatures(input, 20);
+    // Check the mint's oldest transactions first — the V1 launch that carries the
+    // commitment is the coin's first transaction, not one of its latest ones.
+    const [earliest, recent] = await Promise.all([
+      earliestAddressSignatures(input, 10).catch(() => []),
+      recentAddressSignatures(input, 20).catch(() => [])
+    ]);
+    const signatures = [...new Set([...earliest, ...recent])];
     let checked = 0;
     for (let i = 0; i < signatures.length; i += 4) {
       const results = await Promise.all(signatures.slice(i, i + 4).map(async signature => {
@@ -135,7 +141,7 @@ export async function findV1Inscription(input) {
       if (found) return found;
     }
     if (!checked && signatures.length) return { status: 'unknown', message: 'Recent mint transactions could not be read with v1 support.' };
-    return { status: 'invalid', reason: signatures.length ? `No authorized V1 VALIDATE v1 image commitment was found in the ${signatures.length} most recent mint transactions.` : 'No recent transactions were available for this mint.' };
+    return { status: 'invalid', reason: signatures.length ? `No authorized V1 VALIDATE v1 image commitment was found in the ${signatures.length} earliest and most recent mint transactions.` : 'No transactions were available for this mint.' };
   } catch (error) {
     return { status: 'unknown', message: error.message || 'Unable to check v1 transaction inscriptions right now.' };
   }

@@ -52,6 +52,13 @@ export async function recentAddressSignatures(address, limit = 20) {
   return [...new Set(transactions.map(tx => tx.signature))].filter(signature => typeof signature === 'string' && /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature));
 }
 
+// The V1 launch/inscription transaction is a mint's first transaction, so trading
+// activity can push it far outside the most recent page of signatures.
+export async function earliestAddressSignatures(address, limit = 10) {
+  const transactions = await heliusAddressTransactions(address, Math.min(limit, 20), 'asc');
+  return [...new Set(transactions.map(tx => tx.signature))].filter(signature => typeof signature === 'string' && /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature));
+}
+
 export async function inscriptionHistoryAccounts(metadataKey) {
   const transactions = await heliusAddressTransactions(metadataKey, 3, 'asc');
   return [...new Set(transactions.flatMap(tx => (tx.accountData || []).map(a => a.account)))].filter(a => typeof a === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)).slice(0, 100);
