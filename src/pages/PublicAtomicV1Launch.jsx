@@ -13,6 +13,7 @@ export default function PublicAtomicV1Launch() {
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl"><div className="mx-auto flex h-14 max-w-2xl items-center gap-3 px-4">
       <Link to="/" aria-label="Back home" className="rounded-full p-2 hover:bg-card"><ArrowLeft size={19} /></Link>
       <div className="flex-1 min-w-0"><p className="font-mono text-[9px] tracking-[0.25em] text-primary">MAINNET · SOL</p><h1 className="truncate font-display font-semibold">Atomic V1 Image Launch</h1></div>
+      <Link to="/atomic-v1/history" className="shrink-0 font-mono text-[11px] text-primary hover:underline">My launches</Link>
       <WalletButton />
     </div></header>
     <main className="mx-auto max-w-2xl space-y-7 px-4 py-9 pb-24 sm:px-6">

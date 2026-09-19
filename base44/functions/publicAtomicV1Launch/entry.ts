@@ -26,10 +26,24 @@ export default async function(req: Request): Promise<Response> {
       if (submitted.error) return Response.json({ error: submitted.error, logs: submitted.logs }, { status: submitted.status });
       return Response.json({ launch: submitted.launch });
     }
-    if (!['size', 'prepare'].includes(body.action)) return Response.json({ error: 'Invalid Atomic V1 action.' }, { status: 400 });
+    if (!['size', 'prepare', 'history'].includes(body.action)) return Response.json({ error: 'Invalid Atomic V1 action.' }, { status: 400 });
 
     const walletAddress = String(body.walletAddress || '');
     if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Connect a Solana wallet before launching.' }, { status: 400 });
+
+    if (body.action === 'history') {
+      const launches = await entities.AtomicV1Launch.filter({ walletAddress }, '-created_date', 50);
+      return Response.json({
+        launches: launches.filter(launch => launch.transactionSignature || launch.status !== 'prepared').map(launch => ({
+          requestId: launch.requestId, coinMint: launch.coinMint, name: launch.name, symbol: launch.symbol,
+          description: launch.description || '', imageUrl: launch.imageUrl, imageByteLength: launch.imageByteLength,
+          imageSha256: launch.imageSha256, firstBuyAmount: launch.firstBuyAmount || '', status: launch.status,
+          error: launch.error || '', atomicV1Verified: !!launch.atomicV1Verified,
+          transactionSignature: launch.transactionSignature || '', createdDate: launch.created_date
+        }))
+      });
+    }
+
     const mintAddress = String(body.mintAddress || '');
     if (!addressPattern.test(mintAddress)) return Response.json({ error: 'The coin mint key could not be read from your browser. Refresh and try again.' }, { status: 400 });
     const input = cleanAtomicV1Input(body);
