@@ -8,6 +8,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 export default function useAtomicV1Launch() {
   const requestId = useRef(crypto.randomUUID());
   const [input, setInput] = useState(initial), [file, setFile] = useState(null), [imageBase64, setImageBase64] = useState('');
+  // Links are off-chain, so they never affect the transaction size preview.
+  const [links, setLinks] = useState({ website: '', twitter: '', github: '' });
   const [size, setSize] = useState(null), [sizing, setSizing] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [result, setResult] = useState(null);
   useEffect(() => { if (!file) { setImageBase64(''); return; } toBase64(file).then(setImageBase64).catch(() => setError('Unable to read that image.')); }, [file]);
   useEffect(() => {
@@ -28,11 +30,11 @@ export default function useAtomicV1Launch() {
     event.preventDefault(); if (!file || !size || size.remainingBytes < 0) return; setBusy(true); setError('');
     try {
       const upload = await base44.integrations.Core.UploadPublicFile({ file });
-      const { data } = await base44.functions.invoke('atomicV1PumpLaunch', { action: 'launch', requestId: requestId.current, imageBase64, imageUrl: upload.file_url, ...input });
+      const { data } = await base44.functions.invoke('atomicV1PumpLaunch', { action: 'launch', requestId: requestId.current, imageBase64, imageUrl: upload.file_url, socials: links, ...input });
       setResult(data.launch);
       for (let i = 0; i < 24 && data.launch.status === 'pending'; i += 1) { await wait(2500); const current = await check(data.launch.requestId); if (current.status !== 'pending') break; }
     } catch (reason) { setError(reason.response?.data?.error || reason.message || 'Atomic V1 launch failed.'); }
     finally { setBusy(false); }
   }
-  return { input, setInput, file, setFile, size, sizing, busy, error, result, launch, check: recheck };
+  return { input, setInput, file, setFile, size, sizing, busy, error, result, launch, check: recheck, links, setLink: (key, value) => setLinks(current => ({ ...current, [key]: value })) };
 }

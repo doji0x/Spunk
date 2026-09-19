@@ -9,6 +9,7 @@ import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { detectImageMime, isCompleteImage } from '../../shared/imageMime.ts';
 import { buildAtomicV1Transaction, atomicV1MaxBytes } from '../../shared/atomicV1Launch.ts';
 import { inspectV1Transaction } from '../../shared/v1Transaction.ts';
+import { cleanSocials } from '../../shared/launchSocials.ts';
 
 const solMint = new PublicKey('So11111111111111111111111111111111111111112');
 const appUrl = 'https://solvalidate.base44.app';
@@ -85,7 +86,7 @@ export default async function(req: Request): Promise<Response> {
     const buyLamports = input.firstBuyAmount ? BigInt(atomicAmount(input.firstBuyAmount, 9).toString()) : 0n;
     if (BigInt(balance) < 30_000_000n + buyLamports) return Response.json({ error: 'The mint wallet needs the first-buy amount plus about 0.03 SOL for rent and fees.' }, { status: 422 });
     let [launch] = await base44.entities.AtomicV1Launch.filter({ requestId: input.requestId });
-    const record = { requestId: input.requestId, coinMint, bondingCurve, name: input.name, symbol: input.symbol, description: input.description, imageUrl: body.imageUrl, imageMime, imageByteLength: imageBytes.length, imageSha256: built.imageSha256, metadataUri, transactionVersion: 1, serializedTransactionBytes: built.size, commitment: 'VALIDATE-v1', atomicV1Verified: false, firstBuyAmount: input.firstBuyAmount, status: 'prepared', error: '', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
+    const record = { requestId: input.requestId, coinMint, bondingCurve, name: input.name, symbol: input.symbol, description: input.description, imageUrl: body.imageUrl, imageMime, imageByteLength: imageBytes.length, imageSha256: built.imageSha256, metadataUri, socials: cleanSocials(body.socials), transactionVersion: 1, serializedTransactionBytes: built.size, commitment: 'VALIDATE-v1', atomicV1Verified: false, firstBuyAmount: input.firstBuyAmount, status: 'prepared', error: '', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
     launch = launch ? await base44.entities.AtomicV1Launch.update(launch.id, record) : await base44.entities.AtomicV1Launch.create(record);
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [built.encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
     if (simulation.err) return Response.json({ error: `Atomic V1 simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}`, logs: simulation.logs }, { status: 422 });
