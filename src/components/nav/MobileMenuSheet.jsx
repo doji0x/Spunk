@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Github, MessageSquare, Menu, Plus, Rocket, User, Home } from 'lucide-react';
+import { Github, MessageSquare, Menu, Plus, Rocket, User, Home, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
@@ -13,6 +13,7 @@ export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full
     { to: '/', label: 'Punks', icon: Home },
     { to: '/inscribe', label: 'Inscribe', icon: Plus },
     { to: '/launch', label: 'Launch', icon: Rocket },
+    { to: '/atomic-v1', label: 'Atomic V1', icon: Zap },
     { to: '/proof-of-fart', label: 'Proof of Fart', icon: FlyIcon },
     { to: '/feed', label: 'Feed', icon: MessageSquare },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User }
