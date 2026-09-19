@@ -56,8 +56,7 @@ export async function createBranch(token, repoRef, branchName) {
 export async function commitFile(token, repoRef, branchName, path, content, message) {
   const { owner, repo } = parseRepo(repoRef);
   const base = await defaultBranch(token, repoRef);
-  if (branchName === base) throw new Error('Commits to the default branch are not allowed. Use an astra/* working branch.');
-  await createBranch(token, repoRef, branchName);
+  if (branchName !== base) await createBranch(token, repoRef, branchName);
   const current = await readFile(token, repoRef, path, branchName).catch(() => null);
   const bytes = new TextEncoder().encode(content);
   let binary = '';
@@ -66,5 +65,7 @@ export async function commitFile(token, repoRef, branchName, path, content, mess
     method: 'PUT',
     body: JSON.stringify({ message, content: btoa(binary), branch: branchName, ...(current ? { sha: current.sha } : {}) })
   });
-  return { path, branch: branchName, commit: result.commit?.sha, compareUrl: `https://github.com/${owner}/${repo}/compare/${base}...${branchName}` };
+  const commit = result.commit?.sha;
+  const url = branchName === base ? `https://github.com/${owner}/${repo}/commit/${commit}` : `https://github.com/${owner}/${repo}/compare/${base}...${branchName}`;
+  return { path, branch: branchName, commit, url };
 }
