@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, FileCog, Loader2, CheckCircle2, Search, RotateCcw } from 'lucide-react';
+import { X, FileCog, Loader2, CheckCircle2, Search, RotateCcw, RefreshCw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import MetadataOverrideFields from '@/components/admin/MetadataOverrideFields';
+import MetadataOverrideStatus from '@/components/admin/MetadataOverrideStatus';
 import MetadataOverrideHistory from '@/components/admin/MetadataOverrideHistory';
 import useMetadataOverride from '@/hooks/useMetadataOverride';
 
@@ -36,16 +37,19 @@ export default function AdminMetadataOverride() {
           <p className="font-mono text-[10px] tracking-[0.25em] text-primary">{sourceLabels[launch.source] || 'Launch'} · {String(launch.status).toUpperCase()}</p>
           <h3 className="mt-1 font-display text-xl font-semibold">{launch.inscribed.name} {launch.inscribed.symbol && <span className="text-muted-foreground">({launch.inscribed.symbol})</span>}</h3>
           <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">Inscribed mint {launch.inscribedMint}</p>
-          <p className="mt-3 text-xs leading-5 text-muted-foreground">{state.override ? 'An override is active — the values below are what terminals are served right now.' : 'No override is active — the inscribed values above are being served.'}</p>
+          <div className="mt-4"><MetadataOverrideStatus override={state.override} inscribed={launch.inscribed} /></div>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">Clear a single field below and save to serve the inscribed value for that field again, or remove the whole override with Clear override.</p>
           <div className="mt-5"><MetadataOverrideFields fields={state.fields} onChange={state.update} disabled={state.busy} /></div>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button type="button" onClick={() => state.save(launch.coinMint)} disabled={state.busy} className="gap-2">{state.busy && <Loader2 className="h-4 w-4 animate-spin" />}{state.busy ? 'Saving…' : 'Save override'}</Button>
-            {state.override && <Button type="button" variant="outline" onClick={() => state.clear(launch.coinMint)} disabled={state.busy} className="gap-2"><RotateCcw className="h-4 w-4" />Clear override</Button>}
+            <Button type="button" variant="outline" onClick={() => state.clear(launch.coinMint)} disabled={state.busy || !state.override} className="gap-2"><RotateCcw className="h-4 w-4" />Clear override</Button>
+            <Button type="button" variant="ghost" onClick={() => state.lookup(launch.coinMint)} disabled={state.busy} className="gap-2"><RefreshCw className="h-4 w-4" />Refresh status</Button>
           </div>
           {state.saved && <p className="mt-3 flex items-center gap-1.5 text-xs text-primary"><CheckCircle2 className="h-4 w-4" />{state.saved}</p>}
         </section>
         <section className="mt-5 rounded-2xl border border-border bg-card p-5">
-          <h3 className="mb-4 font-display text-lg font-semibold">Audit log</h3>
+          <h3 className="mb-1 font-display text-lg font-semibold">Audit log</h3>
+          <p className="mb-4 text-xs text-muted-foreground">{state.history.length} recorded change{state.history.length === 1 ? '' : 's'} · newest first</p>
           <MetadataOverrideHistory history={state.history} />
         </section>
       </>}
