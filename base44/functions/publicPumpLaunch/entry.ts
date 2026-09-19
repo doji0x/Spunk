@@ -1,16 +1,16 @@
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
-import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
+import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
-import { ensureLaunchLookupTable, stableLaunchKeys, publicLaunchTableLabel } from '../../shared/launchLookupTable.ts';
+import { readLaunchLookupTable } from '../../shared/launchLookupTable.ts';
 import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
-import { parseWallet, assertMainnet, rpcRequest, adminWalletSecretName } from '../../shared/mintWallet.ts';
+import { assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
-import { launchMint, isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
+import { isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { checkMetadataProxy } from '../../shared/pumpLaunchValidation.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../shared/pumpPairs.ts';
@@ -30,21 +30,21 @@ function socialUrl(value, label) {
 async function accountExists(rpcUrl, address) {
   return Boolean((await rpcRequest(rpcUrl, 'getAccountInfo', [address, { encoding: 'base64', commitment: 'confirmed' }])).value);
 }
-async function submissionKey(walletBytes) {
-  const domain = new TextEncoder().encode('validate-public-launch-submit-v1');
-  const material = new Uint8Array(domain.length + walletBytes.length);
-  material.set(domain); material.set(walletBytes, domain.length);
+// Tamper-detection only: no wallet key is involved in a public launch, so the token
+// is keyed off a plain server secret.
+async function submissionKey() {
+  const material = new TextEncoder().encode(`validate-public-launch-submit-v2:${secrets.get('INSCRIPTION_API_KEY')}`);
   const digest = await crypto.subtle.digest('SHA-256', material);
   return crypto.subtle.importKey('raw', digest, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
-async function createSubmitToken(walletBytes, messageBytes) {
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await submissionKey(walletBytes), messageBytes));
+async function createSubmitToken(messageBytes) {
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await submissionKey(), messageBytes));
   return [...signature].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
-async function verifySubmitToken(walletBytes, messageBytes, token) {
+async function verifySubmitToken(messageBytes, token) {
   if (!/^[0-9a-f]{64}$/i.test(token)) return false;
   const signature = Uint8Array.from(token.match(/.{2}/g).map(value => Number.parseInt(value, 16)));
-  return crypto.subtle.verify('HMAC', await submissionKey(walletBytes), signature, messageBytes);
+  return crypto.subtle.verify('HMAC', await submissionKey(), signature, messageBytes);
 }
 
 export default async function(req: Request): Promise<Response> {
@@ -65,17 +65,22 @@ export default async function(req: Request): Promise<Response> {
       let transaction;
       try { transaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64')); }
       catch { return Response.json({ error: 'Invalid signed launch transaction.' }, { status: 400 }); }
-      const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
-      if (!await verifySubmitToken(walletBytes, transaction.message.serialize(), String(body.submitToken || ''))) return Response.json({ error: 'This signed transaction does not match the prepared public launch.' }, { status: 403 });
+      if (!await verifySubmitToken(transaction.message.serialize(), String(body.submitToken || ''))) return Response.json({ error: 'This signed transaction does not match the prepared public launch.' }, { status: 403 });
       const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
       const requestId = String(body.requestId || '');
       const [attempt] = requestIdPattern.test(requestId) ? await attempts.filter({ requestId }) : [];
+      // The coin mint keypair lives in the launching user's browser; it signs there and
+      // sends only its signature, so no server wallet ever signs a public launch.
+      const mintSignature = String(body.mintSignature || '');
+      if (!attempt?.coinMint || !/^[A-Za-z0-9+/=]{86,90}$/.test(mintSignature)) return Response.json({ error: 'The coin mint signature for this launch is missing. Tap Launch again.' }, { status: 400 });
+      transaction.addSignature(new PublicKey(attempt.coinMint), Buffer.from(mintSignature, 'base64'));
+      const signedTransaction = Buffer.from(transaction.serialize()).toString('base64');
       // A blockhash that expired while the user reviewed in Phantom is not a failure:
       // tell the client to re-prepare with the same request so the coin mint is reused.
       const expired = { error: 'The transaction expired while waiting for approval. Preparing a fresh one…', reprepare: true };
       if (attempt?.lastValidBlockHeight && await rpcRequest(rpcUrl, 'getBlockHeight', [{ commitment: 'confirmed' }]) > attempt.lastValidBlockHeight) return Response.json(expired, { status: 410 });
       let signature;
-      try { signature = await rpcRequest(rpcUrl, 'sendTransaction', [encoded, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]); }
+      try { signature = await rpcRequest(rpcUrl, 'sendTransaction', [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]); }
       catch (error) { if (/blockhash not found/i.test(error.message)) return Response.json(expired, { status: 410 }); throw error; }
       if (attempt) await attempts.update(attempt.id, { status: 'pending', signature, checkedAt: new Date().toISOString() });
       return Response.json({ signature });
@@ -152,9 +157,12 @@ export default async function(req: Request): Promise<Response> {
     const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
     if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
     const wallet = new PublicKey(walletAddress);
-    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
-    const mint = await launchMint(walletBytes, walletAddress, input);
-    const coinMint = mint.publicKey.toBase58(), bondingCurve = bondingCurvePda(mint.publicKey).toBase58();
+    // The coin mint is generated in the launching user's browser and supplied here, so
+    // the coin originates from their Phantom session and never from a server wallet.
+    const coinMint = String(body.coinMint || '').trim();
+    if (!addressPattern.test(coinMint)) return Response.json({ error: 'Reconnect your wallet and tap Launch again — the coin mint could not be read.' }, { status: 400 });
+    const mintKey = new PublicKey(coinMint);
+    const bondingCurve = bondingCurvePda(mintKey).toBase58();
     const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
     let [attempt] = await attempts.filter({ requestId: input.requestId, walletAddress });
     if (attempt && attempt.coinMint !== coinMint) return Response.json({ error: 'This launch request was prepared with different coin details. Start a new launch.' }, { status: 409 });
@@ -180,25 +188,15 @@ export default async function(req: Request): Promise<Response> {
     const fee = input.creatorFeeBps ? new BN(input.creatorFeeBps) : undefined;
     const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
     const buildLaunch = (coinMint, user = wallet) => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: coinMint, name: input.name, symbol: input.symbol, uri, creator: user, user, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
-    // Probe with two different mints AND two different users: only accounts shared by
-    // both sets are global (fee recipients, PDAs, vaults), so the table never holds a
-    // user-derived account and never needs a per-launch extension.
-    const probes = [[Keypair.generate().publicKey, Keypair.generate().publicKey], [Keypair.generate().publicKey, Keypair.generate().publicKey]];
-    const probeSets = await Promise.all(probes.map(([probeMint, probeUser]) => buildLaunch(probeMint, probeUser)));
-    // The table is created once by the funded admin mint wallet, never by the launch wallet.
-    const table = await ensureLaunchLookupTable(
-      createClientFromRequest(req),
-      rpcUrl,
-      Keypair.fromSecretKey(parseWallet(secrets.get(adminWalletSecretName), adminWalletSecretName)),
-      stableLaunchKeys(probeSets, probes.flat()),
-      publicLaunchTableLabel,
-    );
-    const lookupTables = [table];
+    // Read-only: the shared table of global pump accounts is bootstrapped outside this
+    // flow, so no server wallet creates, extends, or pays for anything per launch.
+    const table = await readLaunchLookupTable(createClientFromRequest(req), rpcUrl);
+    const lookupTables = table ? [table] : [];
     // The pump program debits SOL natively from the user on SOL-paired trades, so no
     // WSOL wrap is prepended. User-derived accounts stay static keys in the message.
-    const launchIxs = await buildLaunch(mint.publicKey);
+    const launchIxs = await buildLaunch(mintKey);
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const build = units => compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
+    const build = units => compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables }).encoded;
     let encoded;
     try {
       encoded = build(500000);
@@ -216,7 +214,7 @@ export default async function(req: Request): Promise<Response> {
     const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
     if (units !== 500000) encoded = build(units);
     const preparedTransaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64'));
-    const submitToken = await createSubmitToken(walletBytes, preparedTransaction.message.serialize());
+    const submitToken = await createSubmitToken(preparedTransaction.message.serialize());
     const record = { requestId: input.requestId, walletAddress, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, quoteMint: input.quoteMint, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, socials, submitToken, signature: '', status: 'prepared', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
     attempt = attempt ? await attempts.update(attempt.id, record) : await attempts.create(record);
     // Surface our RPC's view of the transaction so a Phantom-side simulation failure

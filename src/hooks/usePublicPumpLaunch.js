@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 import { phantomTransaction } from '@/lib/phantomTransaction';
+import { launchMintKey, hasLaunchMintKey } from '@/lib/launchMintKey';
 
 const initial = { quoteMint: 'So11111111111111111111111111111111111111112', inscribedMint: '', name: '', symbol: '', firstBuyAmount: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [], website: '', twitter: '', github: '' };
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,13 +66,18 @@ export default function usePublicPumpLaunch() {
   // Prepare → Phantom sign → server submit. An expired blockhash re-prepares with the
   // same request (and therefore the same coin mint) up to two times before giving up.
   async function prepareSignSubmit(params) {
+    // The coin mint keypair is generated and held in this browser, so the launch is
+    // created entirely from the connected wallet's own session.
+    const mint = await launchMintKey(params.requestId);
     for (let round = 0; round < 3; round += 1) {
-      const { data } = await invoke({ action: 'prepare', walletAddress: wallet.address, ...params });
+      const { data } = await invoke({ action: 'prepare', walletAddress: wallet.address, coinMint: mint.address, ...params });
       setPreflight(data.preflight || null);
       if (data.alreadyLaunched) return { data, alreadyLaunched: true };
-      const signed = await wallet.provider.signTransaction(phantomTransaction(data.transaction));
+      const transaction = phantomTransaction(data.transaction);
+      const mintSignature = toBase64(await mint.sign(transaction.message.serialize()));
+      const signed = await wallet.provider.signTransaction(transaction);
       try {
-        const submitted = await invoke({ action: 'submit', transaction: toBase64(signed.serialize()), submitToken: data.submitToken, requestId: params.requestId });
+        const submitted = await invoke({ action: 'submit', transaction: toBase64(signed.serialize()), mintSignature, submitToken: data.submitToken, requestId: params.requestId });
         return { data, signature: submitted.data.signature };
       } catch (reason) {
         if (!reason.response?.data?.reprepare) throw reason;
@@ -101,6 +107,7 @@ export default function usePublicPumpLaunch() {
   }
   async function resume(attempt) {
     if (wallet.network !== 'mainnet-beta') { setError('pump.fun launches are mainnet only. Switch to Mainnet to continue.'); return; }
+    if (!attempt.signature && !hasLaunchMintKey(attempt.requestId)) { setError('This launch was started in another browser, so its coin mint key is not available here. Start a new launch.'); return; }
     const quoteSymbol = settings.pairs.find(pair => pair.mint === attempt.quoteMint)?.symbol || '';
     if (attempt.signature) {
       setBusy(true);

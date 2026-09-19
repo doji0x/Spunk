@@ -61,8 +61,8 @@ async function waitUntilUsable(rpcUrl, table) {
 
 // Reads the shared table without creating one. A standalone dev buy fits without a
 // lookup table, so recovery can proceed even before the table exists.
-export async function readLaunchLookupTable(base44, rpcUrl) {
-  const [record] = await base44.asServiceRole.entities.LaunchLookupTable.filter({ label });
+export async function readLaunchLookupTable(base44, rpcUrl, tableLabel = label) {
+  const [record] = await base44.asServiceRole.entities.LaunchLookupTable.filter({ label: tableLabel });
   return record?.address ? await readTable(rpcUrl, record.address) : null;
 }
 
