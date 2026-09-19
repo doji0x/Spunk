@@ -3,24 +3,16 @@ import { decodeBase58, encodeBase58 } from '@/lib/base58';
 const fromBase64 = value => Uint8Array.from(atob(value), character => character.charCodeAt(0));
 const toBase64 = bytes => btoa(String.fromCharCode(...bytes));
 
-// Phantom's request-based signTransaction takes raw message bytes and returns a detached
-// signature, so a version 1 message is signed without Phantom having to deserialize it.
+// Phantom's signTransaction cannot deserialize a Solana version 1 message (it fails with
+// "reached end of buffer unexpectedly"), so the wallet signs the compiled message bytes
+// directly. An ed25519 signature over those bytes IS the transaction signature.
 async function walletSignature(provider, messageBytes) {
   if (!provider?.isPhantom) throw new Error('Connect Phantom to sign the atomic V1 launch.');
-  try {
-    const result = await provider.request({ method: 'signTransaction', params: { message: encodeBase58(messageBytes) } });
-    const signature = result?.signature;
-    if (typeof signature !== 'string') throw new Error('empty signature');
-    return decodeBase58(signature);
-  } catch (reason) {
-    if (/reject|denied|cancel/i.test(reason?.message || '')) throw reason;
-    // Phantom cannot deserialize a Solana version 1 message, so it answers with a buffer
-    // error. Signing the exact same bytes detached produces the identical signature.
-    const signed = await provider.signMessage(messageBytes);
-    const signature = signed?.signature || signed;
-    if (!signature || signature.length !== 64) throw new Error('Phantom did not return a signature for this version 1 transaction.');
-    return signature instanceof Uint8Array ? signature : new Uint8Array(signature);
-  }
+  const result = await provider.request({ method: 'signMessage', params: { message: encodeBase58(messageBytes), display: 'hex' } });
+  const signature = result?.signature;
+  const bytes = typeof signature === 'string' ? decodeBase58(signature) : signature && new Uint8Array(signature);
+  if (!bytes || bytes.length !== 64) throw new Error('Phantom did not return a signature for this version 1 transaction.');
+  return bytes;
 }
 
 // Collects one signature per required signer: the connected wallet as fee payer and creator,
