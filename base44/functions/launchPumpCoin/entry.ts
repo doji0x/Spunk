@@ -7,7 +7,7 @@ import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda
 import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
 import { launchMint, isLaunched, settleAttempt, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
-import { supportedPairOptions } from '../../shared/pumpPairs.ts';
+import { supportedPairOptions, tokenBalance } from '../../shared/pumpPairs.ts';
 import { checkMetadataProxy, walletOwnsInscription } from '../../shared/pumpLaunchValidation.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
@@ -17,10 +17,6 @@ import { atomicAmount, devBuyInstructions, token2022Program } from '../../shared
 const minLamports = 30_000_000;
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 async function accountExists(rpcUrl, address) { return Boolean((await rpcRequest(rpcUrl, 'getAccountInfo', [address, { encoding: 'base64', commitment: 'confirmed' }])).value); }
-async function tokenBalance(rpcUrl, owner, mint) {
-  const result = await rpcRequest(rpcUrl, 'getTokenAccountsByOwner', [owner, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
-  return result.value.reduce((sum, item) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount), 0n);
-}
 function signedTransaction(instructions, latest, wallet) {
   const tx = new Transaction({ feePayer: wallet.publicKey, ...latest }).add(...instructions);
   tx.sign(wallet);

@@ -1,3 +1,17 @@
+import { PublicKey } from 'npm:@solana/web3.js@1.98.4';
+import { rpcRequest } from './mintWallet.ts';
+
+export async function tokenBalance(rpcUrl, owner, mint) {
+  const result = await rpcRequest(rpcUrl, 'getTokenAccountsByOwner', [owner, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
+  return result.value.reduce((sum, item) => sum + BigInt(item.account.data.parsed.info.tokenAmount.amount), 0n);
+}
+
+export async function resolveSupportedPair(onlineSdk, mint) {
+  const pair = (await supportedPairOptions(onlineSdk)).find(item => item.mint === mint);
+  if (!pair) throw new Error('That pair asset is not currently enabled by pump.fun.');
+  return { pair, quote: await onlineSdk.resolveQuoteMint(new PublicKey(mint)) };
+}
+
 const labels = new Map([
   ['So11111111111111111111111111111111111111112', ['SOL', 'Solana']],
   ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', ['USDC', 'USD Coin']],
