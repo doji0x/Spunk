@@ -10,6 +10,7 @@ import ScrollToTop from './components/ScrollToTop';
 import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
 import AdminMints from '@/pages/AdminMints';
+import AdminAstra from '@/pages/AdminAstra';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -63,6 +64,9 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fmints" replace />} />}>
         <Route path="/admin/mints" element={<AdminMints />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fastra" replace />} />}>
+        <Route path="/admin/astra" element={<AdminAstra />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

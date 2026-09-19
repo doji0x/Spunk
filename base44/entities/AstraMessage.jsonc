@@ -1,0 +1,57 @@
+{
+  "name": "AstraMessage",
+  "type": "object",
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Groups messages into one Astra chat session."
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "activity"
+      ],
+      "default": "user"
+    },
+    "content": {
+      "type": "string"
+    },
+    "toolName": {
+      "type": "string",
+      "description": "GitHub tool Astra used, for activity lines."
+    },
+    "repo": {
+      "type": "string",
+      "description": "owner/repo Astra was working on."
+    }
+  },
+  "required": [
+    "conversationId",
+    "role",
+    "content"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
