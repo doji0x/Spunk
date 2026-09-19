@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { solanaRpc } from '../../shared/solanaServices.ts';
 import { programAddress, derive, decodeMetadata, associatedAddress, inscriptionTag } from '../../shared/inscriptionMetadata.ts';
 import { detectImageMime } from '../../shared/imageMime.ts';
@@ -38,8 +39,15 @@ export default async function(req: Request): Promise<Response> {
     const requestedAsset = url.searchParams.get('asset');
     const asset = ['image', 'audio'].includes(requestedAsset) ? requestedAsset : 'json';
     const socialUrl = key => { const value = (url.searchParams.get(key) || '').trim(); if (!value || value.length > 200) return ''; try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''; } catch { return ''; } };
-    const socials = asset === 'json' ? { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') } : {};
-    const cacheKey = `${mint}:${asset}:${JSON.stringify(socials)}:media-v2`;
+    const coin = (url.searchParams.get('coin') || '').trim();
+    const hasCoin = asset === 'json' && mintPattern.test(coin);
+    let launchAttempt = null;
+    if (hasCoin) [launchAttempt] = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ coinMint: coin });
+    const storedSocials = launchAttempt?.socials || {};
+    const socials = asset !== 'json' ? {} : hasCoin
+      ? { website: storedSocials.website || '', twitter: storedSocials.twitter || '', github: storedSocials.github || '' }
+      : { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') };
+    const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:media-v2`;
     const hit = cached(cacheKey);
     if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -86,6 +94,9 @@ export default async function(req: Request): Promise<Response> {
     const body = JSON.stringify({ ...fields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
     // Audio preparation may initialize the cover after the audio association: do not cache incomplete artwork discovery.
     if (mediaType === 'audio') return new Response(body, { headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
+    // The launch attempt is saved just after the prepare-time fetch of this URI, so a
+    // missing attempt must never be cached — otherwise the link-less JSON would stick.
+    if (hasCoin && !launchAttempt) return new Response(body, { headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
     return remember(cacheKey, body, { ...headers, 'content-type': 'application/json' });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to serve inscription metadata.' }, { status: 500 });

@@ -153,14 +153,16 @@ export default async function(req: Request): Promise<Response> {
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
     const proof = await verifyInscription(input.inscribedMint);
     if (proof.status !== 'valid') return Response.json({ error: proof.reason || proof.message || 'This is not a valid inscription.' }, { status: 422 });
-    const uri = metadataUri(input.inscribedMint, socials);
-    const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
-    if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
     const wallet = new PublicKey(walletAddress);
     // The coin mint is generated in the launching user's browser and supplied here, so
     // the coin originates from their Phantom session and never from a server wallet.
     const coinMint = String(body.coinMint || '').trim();
     if (!addressPattern.test(coinMint)) return Response.json({ error: 'Reconnect your wallet and tap Launch again — the coin mint could not be read.' }, { status: 400 });
+    // Socials stay off the on-chain uri (Metaplex caps it at 200 bytes) and are served
+    // from this attempt record instead, keyed by the coin mint.
+    const uri = metadataUri(input.inscribedMint, coinMint);
+    const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
+    if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
     const mintKey = new PublicKey(coinMint);
     const bondingCurve = bondingCurvePda(mintKey).toBase58();
     const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;

@@ -6,9 +6,11 @@ export const appBaseUrl = 'https://solvalidate.base44.app';
 // create_v2 mints under Token-2022 today; accept legacy SPL too so a program change never hides a landed launch.
 export const tokenPrograms = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'];
 
-export function metadataUri(mint, socials = {}) {
+// Metaplex caps the on-chain uri at 200 bytes, so social links never go in it: the
+// coin mint is the key the metadata endpoint uses to read them back.
+export function metadataUri(mint, coinMint = '') {
   const params = new URLSearchParams({ mint });
-  for (const key of ['website', 'twitter', 'github']) if (socials[key]) params.set(key, socials[key]);
+  if (coinMint) params.set('coin', coinMint);
   return `${appBaseUrl}/functions/inscriptionMetadata?${params.toString()}`;
 }
 export function assetUri(mint, asset = 'image') { return `${appBaseUrl}/functions/inscriptionMetadata?mint=${mint}&asset=${asset}`; }
