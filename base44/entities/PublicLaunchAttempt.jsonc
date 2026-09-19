@@ -1,0 +1,136 @@
+{
+  "name": "PublicLaunchAttempt",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Client UUID; the coin mint keypair is derived from it."
+    },
+    "walletAddress": {
+      "type": "string",
+      "description": "Phantom wallet that owns this launch."
+    },
+    "inscribedMint": {
+      "type": "string"
+    },
+    "coinMint": {
+      "type": "string"
+    },
+    "bondingCurve": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "quoteMint": {
+      "type": "string"
+    },
+    "firstBuyAmount": {
+      "type": "string"
+    },
+    "creatorFeeBps": {
+      "type": "number"
+    },
+    "holderReward": {
+      "type": "boolean"
+    },
+    "feeRecipients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "creator",
+              "wallet",
+              "github"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "shareBps": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "type",
+          "value",
+          "shareBps"
+        ]
+      }
+    },
+    "socials": {
+      "type": "object",
+      "properties": {
+        "website": {
+          "type": "string"
+        },
+        "twitter": {
+          "type": "string"
+        },
+        "github": {
+          "type": "string"
+        }
+      }
+    },
+    "signature": {
+      "type": "string"
+    },
+    "submitToken": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "pending",
+        "confirmed",
+        "failed",
+        "expired"
+      ],
+      "default": "prepared"
+    },
+    "lastValidBlockHeight": {
+      "type": "number"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "requestId",
+    "walletAddress",
+    "inscribedMint",
+    "coinMint",
+    "bondingCurve",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

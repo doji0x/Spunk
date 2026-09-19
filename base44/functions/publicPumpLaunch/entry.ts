@@ -17,6 +17,7 @@ import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../
 
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
+const requestIdPattern = /^[0-9a-f-]{36}$/i;
 const solMint = new PublicKey('So11111111111111111111111111111111111111112');
 const associatedTokenProgram = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 function socialUrl(value, label) {
@@ -66,8 +67,24 @@ export default async function(req: Request): Promise<Response> {
       catch { return Response.json({ error: 'Invalid signed launch transaction.' }, { status: 400 }); }
       const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
       if (!await verifySubmitToken(walletBytes, transaction.message.serialize(), String(body.submitToken || ''))) return Response.json({ error: 'This signed transaction does not match the prepared public launch.' }, { status: 403 });
-      const signature = await rpcRequest(rpcUrl, 'sendTransaction', [encoded, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]);
+      const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
+      const requestId = String(body.requestId || '');
+      const [attempt] = requestIdPattern.test(requestId) ? await attempts.filter({ requestId }) : [];
+      // A blockhash that expired while the user reviewed in Phantom is not a failure:
+      // tell the client to re-prepare with the same request so the coin mint is reused.
+      const expired = { error: 'The transaction expired while waiting for approval. Preparing a fresh one…', reprepare: true };
+      if (attempt?.lastValidBlockHeight && await rpcRequest(rpcUrl, 'getBlockHeight', [{ commitment: 'confirmed' }]) > attempt.lastValidBlockHeight) return Response.json(expired, { status: 410 });
+      let signature;
+      try { signature = await rpcRequest(rpcUrl, 'sendTransaction', [encoded, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]); }
+      catch (error) { if (/blockhash not found/i.test(error.message)) return Response.json(expired, { status: 410 }); throw error; }
+      if (attempt) await attempts.update(attempt.id, { status: 'pending', signature, checkedAt: new Date().toISOString() });
       return Response.json({ signature });
+    }
+    if (body.action === 'resume') {
+      const walletAddress = String(body.walletAddress || '').trim();
+      if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Invalid wallet address.' }, { status: 400 });
+      const records = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ walletAddress }, '-created_date', 20);
+      return Response.json({ attempts: records.filter(item => ['prepared', 'pending'].includes(item.status)).map(({ submitToken, ...rest }) => rest) });
     }
     if (body.action === 'confirmSharing') {
       const signature = String(body.signature || '');
@@ -109,7 +126,14 @@ export default async function(req: Request): Promise<Response> {
       if (!signaturePattern.test(signature) || !addressPattern.test(coinMint) || !addressPattern.test(bondingCurve)) return Response.json({ error: 'Invalid launch confirmation.' }, { status: 400 });
       const state = (await rpcRequest(rpcUrl, 'getSignatureStatuses', [[signature], { searchTransactionHistory: true }])).value[0];
       const launched = await isLaunched(rpcUrl, coinMint, bondingCurve);
-      return Response.json({ status: state?.err ? 'failed' : launched ? 'confirmed' : 'pending', error: state?.err ? JSON.stringify(state.err) : '' });
+      const status = state?.err ? 'failed' : launched ? 'confirmed' : 'pending';
+      const requestId = String(body.requestId || '');
+      if (status !== 'pending' && requestIdPattern.test(requestId)) {
+        const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
+        const [attempt] = await attempts.filter({ requestId });
+        if (attempt) await attempts.update(attempt.id, { status, signature, checkedAt: new Date().toISOString() });
+      }
+      return Response.json({ status, error: state?.err ? JSON.stringify(state.err) : '' });
     }
     if (body.action !== 'prepare') return Response.json({ error: 'Invalid public launch action.' }, { status: 400 });
     const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || ''), quoteMint: String(body.quoteMint || solMint.toBase58()).trim(), firstBuyAmount: String(body.firstBuyAmount || '').trim(), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
@@ -130,6 +154,16 @@ export default async function(req: Request): Promise<Response> {
     const wallet = new PublicKey(walletAddress);
     const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     const mint = await launchMint(walletBytes, walletAddress, input);
+    const coinMint = mint.publicKey.toBase58(), bondingCurve = bondingCurvePda(mint.publicKey).toBase58();
+    const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
+    let [attempt] = await attempts.filter({ requestId: input.requestId, walletAddress });
+    if (attempt && attempt.coinMint !== coinMint) return Response.json({ error: 'This launch request was prepared with different coin details. Start a new launch.' }, { status: 409 });
+    const launchSummary = { coinMint, bondingCurve, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials, requestId: input.requestId };
+    // A resumed request whose coin already landed must never be relaunched.
+    if (await isLaunched(rpcUrl, coinMint, bondingCurve)) {
+      if (attempt) attempt = await attempts.update(attempt.id, { status: 'confirmed', checkedAt: new Date().toISOString() });
+      return Response.json({ ...launchSummary, alreadyLaunched: true, signature: attempt?.signature || '' });
+    }
     const global = await onlineSdk.fetchGlobal();
     const maxFee = Number(global.maxConfigurableCreatorFeeBps?.toString() || 0);
     if (input.holderReward && !global.isHolderRewardEnabled) return Response.json({ error: 'pump.fun currently has holder rewards disabled.' }, { status: 422 });
@@ -155,9 +189,8 @@ export default async function(req: Request): Promise<Response> {
       associatedTokenProgram,
     )[0];
     const staticQuoteAccounts = isSol ? [userQuoteAccount] : [];
-    const base44 = createClientFromRequest(req);
     const table = await ensureLaunchLookupTable(
-      base44,
+      createClientFromRequest(req),
       rpcUrl,
       Keypair.fromSecretKey(walletBytes),
       stableLaunchKeys(probeSets, [wallet, ...probeMints, ...staticQuoteAccounts]),
@@ -169,10 +202,10 @@ export default async function(req: Request): Promise<Response> {
     // so no WSOL wrap is prepended — same shape as the admin launch.
     const launchIxs = await buildLaunch(mint.publicKey);
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
+    const build = units => compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
     let encoded;
     try {
-      encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
+      encoded = build(500000);
     } catch (error) {
       if (!(error instanceof TransactionTooLargeError)) throw error;
       return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
@@ -181,9 +214,14 @@ export default async function(req: Request): Promise<Response> {
     // Non-blocking preflight: a transient failure here (e.g. lookup-table lag on the
     // sim node) must not stop the launch — sendTransaction's own preflight is final.
     if (simulation.err) console.warn('publicPumpLaunch preflight simulation failed; continuing', JSON.stringify(simulation.err), (simulation.logs || []).slice(-8).join('\n'));
+    // Size the compute budget from what the simulation actually consumed, same as the admin path.
+    const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
+    if (units !== 500000) encoded = build(units);
     const preparedTransaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64'));
     const submitToken = await createSubmitToken(walletBytes, preparedTransaction.message.serialize());
-    return Response.json({ transaction: encoded, submitToken, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
+    const record = { requestId: input.requestId, walletAddress, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, quoteMint: input.quoteMint, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, socials, submitToken, signature: '', status: 'prepared', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
+    attempt = attempt ? await attempts.update(attempt.id, record) : await attempts.create(record);
+    return Response.json({ ...launchSummary, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }
