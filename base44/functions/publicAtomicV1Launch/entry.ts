@@ -24,7 +24,8 @@ export default async function(req: Request): Promise<Response> {
 
     const walletAddress = String(body.walletAddress || '');
     if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Connect a Solana wallet before launching.' }, { status: 400 });
-    const input = cleanAtomicV1Input(body);
+    // Public launches are create-only: the app wallet pays, so a first buy would credit the wrong wallet.
+    const input = { ...cleanAtomicV1Input(body), firstBuyAmount: '' };
     const inputError = atomicV1InputError(input);
     if (inputError) return Response.json({ error: inputError }, { status: 400 });
     const image = readAtomicV1Image(body.imageBase64);
@@ -36,7 +37,7 @@ export default async function(req: Request): Promise<Response> {
       if (lastHour.length >= 3) return Response.json({ error: 'You have reached the limit of 3 atomic V1 launches per hour. Try again later.' }, { status: 429 });
     }
 
-    const outcome = await runAtomicV1Launch({ entities, rpcUrl, body, input, imageBytes: image.imageBytes, imageMime: image.imageMime, ownerId: walletAddress, action: body.action, extraRecord: { walletAddress } });
+    const outcome = await runAtomicV1Launch({ entities, rpcUrl, body, input, imageBytes: image.imageBytes, imageMime: image.imageMime, ownerId: walletAddress, action: body.action, creatorAddress: walletAddress, extraRecord: { walletAddress } });
     if (outcome.error) return Response.json({ error: outcome.error, size: outcome.size }, { status: outcome.status });
     return Response.json({ launch: outcome.launch, size: outcome.size });
   } catch (error) {

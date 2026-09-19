@@ -43,10 +43,10 @@ export function readAtomicV1Image(imageBase64) {
   return { imageBytes, imageMime };
 }
 
-async function pumpInstructions({ rpcUrl, mintKey, input, metadataUri, creator }) {
+async function pumpInstructions({ rpcUrl, mintKey, input, metadataUri, creator, payer }) {
   const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
   const global = await onlineSdk.fetchGlobal();
-  const shared = { mint: mintKey, name: input.name, symbol: input.symbol, uri: metadataUri, creator, user: creator, mayhemMode: false, holderReward: false };
+  const shared = { mint: mintKey, name: input.name, symbol: input.symbol, uri: metadataUri, creator, user: payer, mayhemMode: false, holderReward: false };
   if (!input.firstBuyAmount) return [await PUMP_SDK.createV2Instruction(shared)];
   const quote = await onlineSdk.resolveQuoteMint(solMint);
   const quoteAmount = atomicAmount(input.firstBuyAmount, quote.decimals);
@@ -58,7 +58,7 @@ async function pumpInstructions({ rpcUrl, mintKey, input, metadataUri, creator }
 
 // Shared Atomic V1 engine. `action` is 'size' or 'launch'; `extraRecord` lets the public
 // path store the requesting wallet on the launch record.
-export async function runAtomicV1Launch({ entities, rpcUrl, body, input, imageBytes, imageMime, ownerId, action, extraRecord = {} }) {
+export async function runAtomicV1Launch({ entities, rpcUrl, body, input, imageBytes, imageMime, ownerId, action, creatorAddress = '', extraRecord = {} }) {
   if (action === 'launch') {
     const [existing] = await entities.AtomicV1Launch.filter({ requestId: input.requestId });
     if (existing?.transactionSignature) return { launch: existing };
@@ -69,7 +69,9 @@ export async function runAtomicV1Launch({ entities, rpcUrl, body, input, imageBy
   const coinMint = mint.publicKey.toBase58();
   const bondingCurve = bondingCurvePda(mint.publicKey).toBase58();
   const metadataUri = `${appUrl}/functions/atomicV1Metadata?mint=${coinMint}`;
-  const legacyInstructions = await pumpInstructions({ rpcUrl, mintKey: mint.publicKey, input, metadataUri, creator: wallet.publicKey });
+  // The launching wallet is recorded on-chain as the coin creator; the app wallet only pays and signs.
+  const creator = creatorAddress ? new PublicKey(creatorAddress) : wallet.publicKey;
+  const legacyInstructions = await pumpInstructions({ rpcUrl, mintKey: mint.publicKey, input, metadataUri, creator, payer: wallet.publicKey });
   const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
   const built = await buildAtomicV1Transaction({ legacyInstructions, payerBytes: walletBytes, mintBytes: mint.secretKey, latest, mint: coinMint, imageBytes });
   const size = { imageBytes: built.imageBytes, commitmentBytes: built.commitmentBytes, transactionBytesWithoutImage: built.transactionBytesWithoutImage, finalSerializedTransactionBytes: built.size, maximumBytes: atomicV1MaxBytes, remainingBytes: built.remainingBytes, requiredReductionBytes: built.requiredReductionBytes, coinMint, imageSha256: built.imageSha256 };
