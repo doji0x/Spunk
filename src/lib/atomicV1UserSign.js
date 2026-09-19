@@ -1,4 +1,4 @@
-import { decodeBase58, encodeBase58 } from '@/lib/base58';
+import { decodeBase58 } from '@/lib/base58';
 
 const fromBase64 = value => Uint8Array.from(atob(value), character => character.charCodeAt(0));
 const toBase64 = bytes => btoa(String.fromCharCode(...bytes));
@@ -8,7 +8,9 @@ const toBase64 = bytes => btoa(String.fromCharCode(...bytes));
 // directly. An ed25519 signature over those bytes IS the transaction signature.
 async function walletSignature(provider, messageBytes) {
   if (!provider?.isPhantom) throw new Error('Connect Phantom to sign the atomic V1 launch.');
-  const result = await provider.request({ method: 'signMessage', params: { message: encodeBase58(messageBytes), display: 'hex' } });
+  // Phantom's in-page signMessage takes the raw bytes, not a base58 string — a string is
+  // rejected with "expected buffer" before the approval prompt ever appears.
+  const result = await provider.request({ method: 'signMessage', params: { message: messageBytes, display: 'hex' } });
   const signature = result?.signature;
   const bytes = typeof signature === 'string' ? decodeBase58(signature) : signature && new Uint8Array(signature);
   if (!bytes || bytes.length !== 64) throw new Error('Phantom did not return a signature for this version 1 transaction.');
