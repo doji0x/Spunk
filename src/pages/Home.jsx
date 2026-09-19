@@ -49,17 +49,17 @@ export default function Home() {
   return <div className="validate-surface flex min-h-screen flex-col pb-24 text-foreground">
     <ValidateHeader onLearn={() => setAbout(true)} />
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
-      <PunksHero />
+      <div className="text-left">
+        <AtomicV1Hero />
+        <Link to="/atomic-v1" className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Launch an Atomic V1 coin <ArrowUpRight size={14} /></Link>
+      </div>
+
+      <div className="mt-16"><PunksHero /></div>
       <CurationPreservation />
       <button onClick={toggleSupport} className="mt-6 mb-4 bg-primary text-white px-4 py-2 rounded">
         {supportEnabled ? 'Disable Support' : 'Enable Support'}
       </button>
       {supportEnabled && <div className="rounded-md bg-secondary p-4 text-secondary-foreground">Support features are now enabled.</div>}
-
-      <div className="mt-16 text-left">
-        <AtomicV1Hero />
-        <Link to="/atomic-v1" className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Launch an Atomic V1 coin <ArrowUpRight size={14} /></Link>
-      </div>
 
       <section className="mt-16 rounded-3xl border border-primary/25 bg-card p-7 text-left sm:p-9" aria-labelledby="proof-of-fart-heading">
         <p className="font-mono text-[9px] tracking-[0.18em] text-primary">ON-CHAIN AUDIO EXPERIMENT</p>
