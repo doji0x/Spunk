@@ -4,7 +4,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
-import { readLaunchLookupTable } from '../../shared/launchLookupTable.ts';
+import { readLaunchLookupTable, publicLaunchTableLabel } from '../../shared/launchLookupTable.ts';
 import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
@@ -190,7 +190,7 @@ export default async function(req: Request): Promise<Response> {
     const buildLaunch = (coinMint, user = wallet) => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: coinMint, name: input.name, symbol: input.symbol, uri, creator: user, user, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
     // Read-only: the shared table of global pump accounts is bootstrapped outside this
     // flow, so no server wallet creates, extends, or pays for anything per launch.
-    const table = await readLaunchLookupTable(createClientFromRequest(req), rpcUrl);
+    const table = await readLaunchLookupTable(createClientFromRequest(req), rpcUrl, publicLaunchTableLabel);
     const lookupTables = table ? [table] : [];
     // The pump program debits SOL natively from the user on SOL-paired trades, so no
     // WSOL wrap is prepended. User-derived accounts stay static keys in the message.
@@ -201,8 +201,11 @@ export default async function(req: Request): Promise<Response> {
     try {
       encoded = build(500000);
     } catch (error) {
-      if (!(error instanceof TransactionTooLargeError)) throw error;
-      return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
+      // compileToV0Message overflows its fixed buffer before serialize() can measure the size.
+      const overrun = /encoding overruns Uint8Array/i.test(error.message || '');
+      if (!(error instanceof TransactionTooLargeError) && !overrun) throw error;
+      const size = error instanceof TransactionTooLargeError ? `${error.size} bytes` : 'over 1232 bytes';
+      return Response.json({ error: `Create and first buy do not fit in one transaction (${size}), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
     }
     // Non-blocking preflight: a failure here (value.err or a JSON-RPC error) is captured
     // for the UI and logged, never thrown — sendTransaction's own preflight is final.
