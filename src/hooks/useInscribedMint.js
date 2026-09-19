@@ -30,7 +30,12 @@ export default function useInscribedMint(userId, selectedMint = '') {
       if (!values.file || values.file.size < 1 || values.file.size > 1024 * 1024) throw new Error('The image must be 1 MB or smaller.');
       const upload = await base44.integrations.Core.UploadPrivateFile({ file: values.file });
       if (!upload?.file_uri) throw new Error('The private source image upload did not complete. Please select the image and try again.');
-      const response = await base44.functions.invoke('mintInscribedNft', { action: 'startBackground', requestId: values.requestId || crypto.randomUUID(), mint: values.mint?.trim() || undefined, name: values.name, symbol: values.symbol, details: values.details, mimeType: values.file.type, totalSize: values.file.size, sourceUri: upload.file_uri });
+      const requestId = values.requestId || crypto.randomUUID();
+      if (values.requestId) {
+        const saved = (await base44.entities.MintRecord.filter({ requestId }, '-created_date', 1))[0];
+        if (saved) await base44.entities.MintRecord.update(saved.id, { sourceUri: upload.file_uri, imageUri: upload.file_uri, mediaType: 'image', mediaMime: values.file.type, imageMime: values.file.type, totalSize: values.file.size });
+      }
+      const response = await base44.functions.invoke('mintInscribedNft', { action: 'startBackground', requestId, mint: values.mint?.trim() || undefined, name: values.name, symbol: values.symbol, details: values.details, mimeType: values.file.type, totalSize: values.file.size, sourceUri: upload.file_uri });
       if (response.data?.error || !response.data?.job) throw new Error(response.data?.error || 'The background mint could not be queued.');
       applyRecord(response.data.job);
     } catch (error) { setState(current => ({ ...current, busy: false, error: error.response?.data?.error || error.message, activity: 'Queue submission failed' })); }

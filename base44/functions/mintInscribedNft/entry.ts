@@ -131,9 +131,13 @@ export default async function(req: Request): Promise<Response> {
       const symbol = String(input.symbol || '').trim().toUpperCase();
       const description = String(input.details || '').trim();
       const totalSize = Number(input.totalSize);
-      const sourceUri = background ? String(input.sourceUri || input.imageUri || '').trim() : '';
+      let sourceUri = background ? String(input.sourceUri || input.imageUri || '').trim() : '';
+      if (background && !sourceUri && isAdmin && input.requestId) {
+        const saved = (await base44.asServiceRole.entities.MintRecord.filter({ requestId: input.requestId }, '-created_date', 1))[0];
+        sourceUri = String(saved?.sourceUri || saved?.imageUri || '').trim();
+      }
       const mediaType = mediaTypeForMime(input.mimeType);
-      if (background && (!sourceUri || sourceUri.length > 1000)) return Response.json({ error: 'Private source media is required for background minting.' }, { status: 400 });
+      if (background && (!sourceUri || sourceUri.length > 1000)) return Response.json({ error: 'Upload the private source media before starting background minting.' }, { status: 400 });
       if (!name || name.length > 32 || !symbol || symbol.length > 10 || !description || description.length > 1000) return Response.json({ error: 'Use a name up to 32 characters, ticker up to 10, and details up to 1,000.' }, { status: 400 });
       if (!Number.isInteger(totalSize) || totalSize < 1 || totalSize > maxImageBytes) return Response.json({ error: 'The media must be 1 MB or smaller.' }, { status: 400 });
       if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'audio/mpeg'].includes(input.mimeType)) return Response.json({ error: 'Use a PNG, JPEG, GIF, WebP, or MP3 file.' }, { status: 400 });
