@@ -67,21 +67,29 @@ async function formatMatch(match, confidence, signature) {
   };
 }
 
-async function committedImage(parsed, mint) {
+function signerAddressesFromWire(wire) {
+  const requiredSignatures = wire[1];
+  return Array.from({ length: requiredSignatures }, (_, index) => wire.subarray(42 + index * 32, 74 + index * 32));
+}
+
+// Scans the raw wire bytes for the VALIDATE v1 commitment so verification never
+// depends on how the v1 header encodes optional transaction config fields.
+async function committedImage(wire, mint) {
   const mintBytes = Buffer.from(bs58.decode(mint));
   if (mintBytes.length !== 32) return null;
-  const mintSigned = parsed.signerAddresses.some(address => address.equals(mintBytes));
-  if (!mintSigned) return null;
-  for (const instruction of parsed.instructions) {
-    if (instruction.length <= commitmentHeaderBytes || !instruction.subarray(0, commitmentPrefix.length).equals(commitmentPrefix)) continue;
-    if (!instruction.subarray(commitmentPrefix.length, commitmentPrefix.length + 32).equals(mintBytes)) continue;
-    const expectedHash = instruction.subarray(commitmentPrefix.length + 32, commitmentHeaderBytes);
-    const imageBytes = instruction.subarray(commitmentHeaderBytes);
-    const match = imageSlice(imageBytes);
-    if (!match || match.bytes.length !== imageBytes.length) continue;
-    const digest = Buffer.from(await crypto.subtle.digest('SHA-256', match.bytes));
-    if (!digest.equals(expectedHash)) continue;
-    return match;
+  if (!signerAddressesFromWire(wire).some(address => address.equals(mintBytes))) return null;
+  let start = wire.indexOf(commitmentPrefix);
+  while (start !== -1) {
+    const body = wire.subarray(start);
+    if (body.length > commitmentHeaderBytes && body.subarray(commitmentPrefix.length, commitmentPrefix.length + 32).equals(mintBytes)) {
+      const expectedHash = body.subarray(commitmentPrefix.length + 32, commitmentHeaderBytes);
+      const match = imageSlice(body.subarray(commitmentHeaderBytes));
+      if (match) {
+        const digest = Buffer.from(await crypto.subtle.digest('SHA-256', match.bytes));
+        if (digest.equals(expectedHash)) return match;
+      }
+    }
+    start = wire.indexOf(commitmentPrefix, start + 1);
   }
   return null;
 }
@@ -92,18 +100,24 @@ export async function inspectV1Transaction(signature, expectedMint = null) {
   if (response.meta?.err) return { status: 'invalid', reason: 'The transaction failed and did not commit data.' };
   if (response.version !== 1) return { status: 'invalid', reason: 'No image was found in a Solana v1 transaction.' };
   const wire = Buffer.from(response.transaction[0], 'base64');
-  const parsed = parseV1Message(wire);
   if (expectedMint) {
-    const match = await committedImage(parsed, expectedMint);
+    const match = await committedImage(wire, expectedMint);
     if (!match) return { status: 'invalid', reason: 'No authorized V1 VALIDATE v1 commitment was found for this mint.' };
     const result = await formatMatch(match, 'high', signature);
     return { ...result, mint: expectedMint, commitment: 'VALIDATE-v1', mintAuthorized: true };
   }
-  for (const instruction of parsed.instructions) {
+  let parsed = null;
+  try { parsed = parseV1Message(wire); } catch { parsed = null; }
+  for (const instruction of parsed?.instructions || []) {
     const match = imageSlice(instruction);
     if (match) return formatMatch(match, 'high', signature);
   }
-  const match = imageSlice(parsed.message);
+  const commitmentStart = wire.indexOf(commitmentPrefix);
+  if (commitmentStart !== -1) {
+    const match = imageSlice(wire.subarray(commitmentStart + commitmentHeaderBytes));
+    if (match) return { ...(await formatMatch(match, 'high', signature)), commitment: 'VALIDATE-v1' };
+  }
+  const match = imageSlice(parsed?.message || wire);
   return match ? formatMatch(match, 'low', signature) : { status: 'invalid', reason: 'No complete PNG, JPEG, GIF, or WebP bytes were found in this v1 transaction.' };
 }
 
