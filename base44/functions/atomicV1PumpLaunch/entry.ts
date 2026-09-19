@@ -3,7 +3,7 @@ import { secrets } from 'base44:runtime';
 import { Buffer } from 'node:buffer';
 import { Connection, Keypair, PublicKey } from 'npm:@solana/web3.js@1.98.4';
 import { OnlinePumpSdk, PUMP_SDK, bondingCurvePda, getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
-import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
+import { parseWallet, assertMainnet, rpcRequest, adminWalletSecretName } from '../../shared/mintWallet.ts';
 import { launchMint, isLaunched } from '../../shared/pumpLaunch.ts';
 import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { detectImageMime, isCompleteImage } from '../../shared/imageMime.ts';
@@ -62,7 +62,7 @@ export default async function(req: Request): Promise<Response> {
       if (existing?.transactionSignature) return Response.json({ launch: existing });
     }
 
-    const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
+    const walletBytes = parseWallet(secrets.get(adminWalletSecretName), adminWalletSecretName);
     const wallet = Keypair.fromSecretKey(walletBytes);
     const mint = await launchMint(walletBytes, user.id, { ...input, inscribedMint: 'atomic-v1' });
     const coinMint = mint.publicKey.toBase58();
@@ -90,7 +90,7 @@ export default async function(req: Request): Promise<Response> {
 
     const balance = (await rpcRequest(rpcUrl, 'getBalance', [wallet.publicKey.toBase58(), { commitment: 'confirmed' }])).value;
     const buyLamports = input.firstBuyAmount ? BigInt(atomicAmount(input.firstBuyAmount, 9).toString()) : 0n;
-    if (BigInt(balance) < 30_000_000n + buyLamports) return Response.json({ error: 'The mint wallet needs the first-buy amount plus about 0.03 SOL for rent and fees.' }, { status: 422 });
+    if (BigInt(balance) < 30_000_000n + buyLamports) return Response.json({ error: 'The admin wallet needs the first-buy amount plus about 0.03 SOL for rent and fees.' }, { status: 422 });
     let [launch] = await base44.entities.AtomicV1Launch.filter({ requestId: input.requestId });
     const record = { requestId: input.requestId, coinMint, bondingCurve, name: input.name, symbol: input.symbol, description: input.description, imageUrl: body.imageUrl, imageMime, imageByteLength: imageBytes.length, imageSha256: built.imageSha256, metadataUri, socials: cleanSocials(body.socials), transactionVersion: 1, serializedTransactionBytes: built.size, commitment: 'VALIDATE-v1', atomicV1Verified: false, firstBuyAmount: input.firstBuyAmount, status: 'prepared', error: '', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
     launch = launch ? await base44.entities.AtomicV1Launch.update(launch.id, record) : await base44.entities.AtomicV1Launch.create(record);
