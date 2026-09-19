@@ -84,7 +84,7 @@ function App() {
           <PhantomWalletProvider>
             <ScrollToTop />
             <div className="mobile-navigation-shell">
-              <nav aria-label="Mobile page navigation" className="sticky top-0 z-40 flex h-14 items-center justify-end border-b border-border bg-background px-4 sm:hidden">
+              <nav aria-label="Page navigation" className="sticky top-0 z-50 flex h-14 items-center justify-end border-b border-border bg-background px-4">
                 <MobileMenuSheet showLabel={false} triggerClassName="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:text-primary" />
               </nav>
               <AuthenticatedApp />
