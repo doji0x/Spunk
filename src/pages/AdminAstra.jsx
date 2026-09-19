@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import AstraMessageList from '@/components/astra/AstraMessageList';
 import AstraComposer from '@/components/astra/AstraComposer';
 import useAstraChat from '@/hooks/useAstraChat';
+import MobileMenuSheet from '@/components/nav/MobileMenuSheet';
 
 export default function AdminAstra() {
   const [user, setUser] = useState();
@@ -21,6 +22,7 @@ export default function AdminAstra() {
         <Link to="/" aria-label="Close Astra" className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-card"><X className="h-5 w-5" /></Link>
         <div className="flex-1"><p className="font-mono text-[10px] leading-none tracking-[0.3em] text-primary">ADMIN · ASTRA</p><h1 className="font-display font-semibold leading-tight">Repository agent</h1></div>
         <Button variant="outline" size="sm" onClick={chat.reset} className="gap-1.5"><Plus size={14} />New</Button>
+        <MobileMenuSheet showLabel={false} triggerClassName="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/50 hover:text-foreground sm:hidden" />
       </div>
     </header>
     <main className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-3xl flex-col px-4 sm:px-6">

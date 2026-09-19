@@ -5,7 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 import FlyIcon from '@/components/icons/FlyIcon';
 
-export default function MobileMenuSheet({ triggerClassName = '' }) {
+export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground transition hover:text-primary', showLabel = true }) {
   const [open, setOpen] = useState(false);
   const { address } = usePhantomWallet();
   const main = [
@@ -23,8 +23,8 @@ export default function MobileMenuSheet({ triggerClassName = '' }) {
   ];
   const row = 'flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-3 text-sm font-medium text-foreground transition hover:border-primary/50';
   return <Sheet open={open} onOpenChange={setOpen}>
-    <SheetTrigger aria-label="Open menu" className={`flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground transition hover:text-primary ${triggerClassName}`}>
-      <Menu className="h-5 w-5" /><span className="text-[9px] font-medium">Menu</span>
+    <SheetTrigger aria-label="Open menu" className={triggerClassName}>
+      <Menu className="h-5 w-5" />{showLabel && <span className="text-[9px] font-medium">Menu</span>}
     </SheetTrigger>
     <SheetContent side="right" className="w-[82vw] max-w-xs overflow-y-auto">
       <SheetHeader><SheetTitle className="gold-text font-display tracking-[0.14em]">MENU</SheetTitle></SheetHeader>
