@@ -1,8 +1,7 @@
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
-import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, SystemProgram } from 'npm:@solana/web3.js@1.98.4';
-import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction } from 'npm:@solana/spl-token@0.4.14';
+import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
 import { ensureLaunchLookupTable, stableLaunchKeys, withoutLaunchLookupAddresses } from '../../shared/launchLookupTable.ts';
@@ -166,18 +165,11 @@ export default async function(req: Request): Promise<Response> {
     // The user's WSOL account stays a static key so Phantom's pre-sign simulation
     // never depends on a freshly extended lookup table.
     const lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
+    // The pump program debits SOL natively from the user on legacy (SOL) trades,
+    // so no WSOL wrap is prepended — same shape as the admin launch.
     const launchIxs = await buildLaunch(mint.publicKey);
-    // SPL Token syncNative is instruction index 17 (single-byte data).
-    const sdkIncludesSyncNative = isSol && launchIxs.some(ix => ix.programId.equals(quote.quoteTokenProgram) && ix.data.length === 1 && ix.data[0] === 17);
-    const solWrapIxs = !isSol ? [] : [
-      createAssociatedTokenAccountIdempotentInstruction(wallet, userQuoteAccount, wallet, quote.mint, quote.quoteTokenProgram, associatedTokenProgram),
-      ...(!sdkIncludesSyncNative ? [
-        SystemProgram.transfer({ fromPubkey: wallet, toPubkey: userQuoteAccount, lamports: BigInt(quoteAmount.toString()) }),
-        createSyncNativeInstruction(userQuoteAccount, quote.quoteTokenProgram),
-      ] : []),
-    ];
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...solWrapIxs, ...launchIxs];
+    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
     let encoded;
     try {
       encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
