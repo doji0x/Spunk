@@ -4,7 +4,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
-import { ensureLaunchLookupTable, stableLaunchKeys } from '../../shared/launchLookupTable.ts';
+import { ensureLaunchLookupTable, stableLaunchKeys, withoutLaunchLookupAddresses } from '../../shared/launchLookupTable.ts';
 import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
@@ -18,6 +18,7 @@ import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const solMint = new PublicKey('So11111111111111111111111111111111111111112');
+const associatedTokenProgram = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 function socialUrl(value, label) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -149,16 +150,38 @@ export default async function(req: Request): Promise<Response> {
     // create + first buy into one atomic transaction.
     const probeMints = [Keypair.generate().publicKey, Keypair.generate().publicKey];
     const probeSets = await Promise.all(probeMints.map(buildLaunch));
+    const userQuoteAccount = PublicKey.findProgramAddressSync(
+      [wallet.toBuffer(), quote.quoteTokenProgram.toBuffer(), quote.mint.toBuffer()],
+      associatedTokenProgram,
+    )[0];
+    const staticQuoteAccounts = isSol ? [userQuoteAccount] : [];
     const base44 = createClientFromRequest(req);
-    const lookupTables = [await ensureLaunchLookupTable(base44, rpcUrl, Keypair.fromSecretKey(walletBytes), stableLaunchKeys(probeSets, [wallet, ...probeMints]))];
+    const table = await ensureLaunchLookupTable(
+      base44,
+      rpcUrl,
+      Keypair.fromSecretKey(walletBytes),
+      stableLaunchKeys(probeSets, [wallet, ...probeMints, ...staticQuoteAccounts]),
+    );
+    let lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
     const launchIxs = await buildLaunch(mint.publicKey);
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
+    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
     let encoded;
     try {
-      encoded = compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
+      encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
     } catch (error) {
       if (!(error instanceof TransactionTooLargeError)) throw error;
-      return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
+      if (isSol) {
+        const fallbackTable = await ensureLaunchLookupTable(base44, rpcUrl, Keypair.fromSecretKey(walletBytes), stableLaunchKeys(probeSets, [wallet, ...probeMints]));
+        lookupTables = [fallbackTable];
+        try { encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded; }
+        catch (fallbackError) {
+          if (!(fallbackError instanceof TransactionTooLargeError)) throw fallbackError;
+          return Response.json({ error: `Create and first buy do not fit in one transaction (${fallbackError.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
+        }
+      } else {
+        return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
+      }
     }
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
     if (simulation.err) return Response.json({ error: `Launch simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}` }, { status: 422 });

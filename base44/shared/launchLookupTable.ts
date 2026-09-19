@@ -15,6 +15,15 @@ export function stableLaunchKeys(instructionSets, excluded = []) {
   return [...keySets[0]].filter(key => !skip.has(key) && keySets.every(set => set.has(key)));
 }
 
+export function withoutLaunchLookupAddresses(table, excluded = []) {
+  const skip = new Set(excluded.map(key => key.toBase58()));
+  if (!skip.size || !table.state.addresses.some(key => skip.has(key.toBase58()))) return table;
+  return new AddressLookupTableAccount({
+    key: table.key,
+    state: { ...table.state, addresses: table.state.addresses.filter(key => !skip.has(key.toBase58())) },
+  });
+}
+
 async function sendAndConfirm(rpcUrl, wallet, instructions) {
   const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
   const transaction = new Transaction({ feePayer: wallet.publicKey, ...latest }).add(...instructions);
