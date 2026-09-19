@@ -1,9 +1,8 @@
 import React from 'react';
-import { Rocket, User, Zap } from 'lucide-react';
+import { MessageSquare, Rocket, User, Zap } from 'lucide-react';
 import { Image } from '@/components/ui/image';
 import { Link, useLocation } from 'react-router-dom';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
-import FlyIcon from '@/components/icons/FlyIcon';
 
 export default function ValidateBottomBar() {
   const { pathname } = useLocation();
@@ -12,7 +11,7 @@ export default function ValidateBottomBar() {
     { to: '/', label: 'Punks', logo: true, active: pathname === '/' },
     { to: '/launch', label: 'Launch', icon: Rocket, active: pathname === '/launch' },
     { to: '/atomic-v1', label: 'Atomic V1', icon: Zap, active: pathname === '/atomic-v1' },
-    { to: '/proof-of-fart', label: 'POF', icon: FlyIcon, active: pathname === '/proof-of-fart' },
+    { to: '/feed', label: 'Feed', icon: MessageSquare, active: pathname === '/feed' },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User, active: pathname.startsWith('/profile/') }
   ];
   return <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">

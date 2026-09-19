@@ -3,7 +3,6 @@ import { Github, MessageSquare, Menu, Plus, Rocket, User, Home, Zap } from 'luci
 import { Link } from 'react-router-dom';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
-import FlyIcon from '@/components/icons/FlyIcon';
 import WalletButton from '@/components/wallet/WalletButton';
 
 export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground transition hover:text-primary', showLabel = true }) {
@@ -14,7 +13,6 @@ export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full
     { to: '/inscribe', label: 'Inscribe', icon: Plus },
     { to: '/launch', label: 'Launch', icon: Rocket },
     { to: '/atomic-v1', label: 'Atomic V1', icon: Zap },
-    { to: '/proof-of-fart', label: 'Proof of Fart', icon: FlyIcon },
     { to: '/feed', label: 'Feed', icon: MessageSquare },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User }
   ];
