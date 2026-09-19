@@ -5,6 +5,11 @@ import { phantomTransaction } from '@/lib/phantomTransaction';
 
 const initial = { quoteMint: 'So11111111111111111111111111111111111111112', inscribedMint: '', name: '', symbol: '', firstBuyAmount: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [], website: '', twitter: '', github: '' };
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const toBase64 = bytes => {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+  return btoa(binary);
+};
 export default function usePublicPumpLaunch() {
   const wallet = usePhantomWallet();
   const [input, setInput] = useState(initial), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [result, setResult] = useState(null);
@@ -43,8 +48,9 @@ export default function usePublicPumpLaunch() {
     try {
       const requestId = crypto.randomUUID();
       const { data } = await base44.functions.invoke('publicPumpLaunch', { action: 'prepare', network: wallet.network, walletAddress: wallet.address, requestId, ...input });
-      const response = await wallet.provider.signAndSendTransaction(phantomTransaction(data.transaction));
-      const signature = response.signature;
+      const signed = await wallet.provider.signTransaction(phantomTransaction(data.transaction));
+      const submitted = await base44.functions.invoke('publicPumpLaunch', { action: 'submit', network: 'mainnet-beta', transaction: toBase64(signed.serialize()), submitToken: data.submitToken });
+      const signature = submitted.data.signature;
       setResult({ ...data, signature, status: 'pending' });
       let confirmed = false;
       for (let attempt = 0; attempt < 10; attempt += 1) {

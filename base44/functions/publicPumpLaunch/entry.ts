@@ -28,6 +28,22 @@ function socialUrl(value, label) {
 async function accountExists(rpcUrl, address) {
   return Boolean((await rpcRequest(rpcUrl, 'getAccountInfo', [address, { encoding: 'base64', commitment: 'confirmed' }])).value);
 }
+async function submissionKey(walletBytes) {
+  const domain = new TextEncoder().encode('validate-public-launch-submit-v1');
+  const material = new Uint8Array(domain.length + walletBytes.length);
+  material.set(domain); material.set(walletBytes, domain.length);
+  const digest = await crypto.subtle.digest('SHA-256', material);
+  return crypto.subtle.importKey('raw', digest, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+async function createSubmitToken(walletBytes, messageBytes) {
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await submissionKey(walletBytes), messageBytes));
+  return [...signature].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+async function verifySubmitToken(walletBytes, messageBytes, token) {
+  if (!/^[0-9a-f]{64}$/i.test(token)) return false;
+  const signature = Uint8Array.from(token.match(/.{2}/g).map(value => Number.parseInt(value, 16)));
+  return crypto.subtle.verify('HMAC', await submissionKey(walletBytes), signature, messageBytes);
+}
 
 export default async function(req: Request): Promise<Response> {
   try {
@@ -40,6 +56,17 @@ export default async function(req: Request): Promise<Response> {
       const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
       const global = await onlineSdk.fetchGlobal();
       return Response.json({ pairs: await supportedPairOptions(onlineSdk), holderRewardEnabled: global.isHolderRewardEnabled, creatorFeeConfigurable: global.creatorFeeConfigurable, maxCreatorFeeBps: Number(global.maxConfigurableCreatorFeeBps?.toString() || 0) });
+    }
+    if (body.action === 'submit') {
+      const encoded = String(body.transaction || '');
+      if (!encoded || encoded.length > 1800) return Response.json({ error: 'Invalid signed launch transaction.' }, { status: 400 });
+      let transaction;
+      try { transaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64')); }
+      catch { return Response.json({ error: 'Invalid signed launch transaction.' }, { status: 400 }); }
+      const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
+      if (!await verifySubmitToken(walletBytes, transaction.message.serialize(), String(body.submitToken || ''))) return Response.json({ error: 'This signed transaction does not match the prepared public launch.' }, { status: 403 });
+      const signature = await rpcRequest(rpcUrl, 'sendTransaction', [encoded, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]);
+      return Response.json({ signature });
     }
     if (body.action === 'confirmSharing') {
       const signature = String(body.signature || '');
@@ -135,7 +162,9 @@ export default async function(req: Request): Promise<Response> {
     }
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
     if (simulation.err) return Response.json({ error: `Launch simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}` }, { status: 422 });
-    return Response.json({ transaction: encoded, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
+    const preparedTransaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64'));
+    const submitToken = await createSubmitToken(walletBytes, preparedTransaction.message.serialize());
+    return Response.json({ transaction: encoded, submitToken, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }
