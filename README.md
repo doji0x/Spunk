@@ -1,6 +1,6 @@
 # Punks
 
-**Version 2.0.0** · [What's New](#whats-new)
+**Version 2.1.0** · [What's New](#whats-new)
 
 > **Less trust. More truth.** Punks (Solana Cypher Punks) is a curation platform for one-of-one on-chain works: inscribe images permanently on Solana, verify the bytes are really there, launch pump.fun coins with inscribed metadata, and share the work in a wallet-native social feed.
 
@@ -10,6 +10,7 @@ Punks combines these capabilities built on the same on-chain inscription foundat
 2. **Launch pump.fun coins with mutable, on-chain-anchored metadata.** The coin's URI points to the app's resolver, which reads the current source inscription state. While the controlled source inscription remains updateable, its image, name, ticker, and description can change without replacing the launched coin. See [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins).
 3. **Curate and share on a wallet-native social layer.** Collectors and creators claim a wallet profile, publish posts, and browse a shared feed. Every social write is authorized by a wallet signature over a server-issued single-use nonce, with per-wallet rate limiting.
 4. **Inscribe and launch without an admin.** Public inscribe and public launch pages let any connected wallet pay for and drive its own inscription and coin launch.
+5. **Launch a coin and its image in one transaction — Atomic V1.** A single Solana version 1 transaction creates the pump.fun coin, optionally buys it, and embeds the exact image bytes on-chain. No chunking, no worker, no second transaction: the coin and its proof are born together. See [Atomic V1 Image Launch](#atomic-v1-image-launch).
 
 Verification is the proof layer beneath both capabilities. Submit a token mint address or transaction signature and the application independently checks four supported inscription paths:
 
@@ -23,6 +24,7 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 ## Table of Contents
 
 - [What's New](#whats-new)
+- [Atomic V1 Image Launch](#atomic-v1-image-launch)
 - [Flagship: Inscribing on V1 with Metaplex](#flagship-inscribing-on-v1-with-metaplex)
 - [Mutable On-Chain Metadata for pump.fun Coins](#mutable-on-chain-metadata-for-pumpfun-coins)
 - [Purpose](#purpose)
@@ -44,6 +46,27 @@ When an image is found, Validate reads the bytes from finalized chain data, conf
 - [Reference Documentation](#reference-documentation)
 
 ## What's New
+
+### 2.1.0 — Atomic V1 Image Launch
+
+**One transaction, coin and image together**
+
+- New **Atomic V1** launch path: a single Solana version 1 transaction carries the pump.fun create instruction, an optional first buy, and the complete image bytes under a `VALIDATE-v1` commitment header. If the transaction lands, the coin exists *and* its image is on-chain — there is no partial state.
+- Version 1 transactions raise the practical payload ceiling far above the legacy 1,232-byte limit, so a whole small image fits inside one launch transaction instead of ~1,300 chunked writes.
+- Live size meter: before signing, the exact serialized transaction size, remaining byte capacity, and required reduction are shown, including the extra bytes an optional first buy adds.
+
+**Fully user-paid and user-signed public launches**
+
+- The connected Phantom wallet is the fee payer, the on-chain `creator`, and the buyer of the optional first buy. The admin mint wallet is never loaded or referenced on the public path.
+- The coin mint keypair is generated and held **client-side** (persisted per request so an interrupted launch resumes on the same mint), and the browser adds its detached signature alongside Phantom's.
+- Prepare → mint-sign → Phantom-sign → server-submit, mirroring the standard public launch flow but with a version 1 payload.
+- Rate limited to three Atomic V1 launches per hour per wallet.
+
+**Verification and metadata**
+
+- `atomicV1Metadata` serves pump.fun-compatible metadata for atomic launches, with editable off-chain social links and the immutable on-chain identity kept separate.
+- Post-launch verification re-reads the finalized transaction, re-hashes the embedded bytes, and confirms the commitment header, image digest, byte count, and coin creation before a launch is reported as verified.
+- Admins keep a separate server-signed Atomic V1 console at `/admin/atomic-v1`; the public page lives at `/atomic-v1`.
 
 ### 2.0.0 — Punks
 
@@ -88,6 +111,8 @@ The application deliberately distinguishes fungible token metadata from NFT-styl
 
 ## Features
 
+- Launches a pump.fun coin and embeds its complete image bytes in one atomic version 1 transaction
+- Lets the connected wallet pay, sign, and be recorded as the on-chain creator, with the coin mint keypair held client-side
 - Inscribes images on-chain with Metaplex across ordered version 1 transactions
 - Writes image bytes in resumable chunks, so an interrupted inscription continues on the same mint
 - Runs inscriptions server-side in a durable background worker that survives closed browser tabs
@@ -159,6 +184,74 @@ Submitting the fungible token's contract address returns:
 - the SHA-256 digest of the exact verified bytes.
 
 This verifies image bytes and their permanent linkage only. It does not verify the token's team, liquidity, distribution, or safety.
+
+## Atomic V1 Image Launch
+
+Chunked inscription is permanent but slow: a 1 MB image is roughly 1,300 sequential transactions, and the coin and its image are necessarily created at different times. **Atomic V1** collapses that into one event.
+
+> **One Solana version 1 transaction creates the coin, optionally buys it, and carries the complete image bytes.** Either everything lands, or nothing does.
+
+### Why version 1 makes this possible
+
+Legacy and v0 Solana transactions are capped at 1,232 bytes on the wire — enough for a signature and a few instructions, nowhere near enough for an image. Transaction version 1 raises that ceiling substantially, which is what turns "embed the image in the launch" from a trick into a usable product path. Atomic V1 uses that headroom deliberately: the image is not a pointer, a URI, or a hash of something stored elsewhere — the bytes themselves are instruction data in the transaction that created the coin.
+
+### How it works
+
+1. **Select an image and enter coin details** — name, ticker, description, optional social links, and an optional first buy amount.
+2. **Client-side mint keypair** — the browser generates the coin mint keypair and persists its seed locally against the request, so a refresh or an interrupted signature resumes the same coin mint instead of orphaning it.
+3. **Size check** — the server builds the *unsigned* transaction and returns its exact serialized size, remaining capacity, and, when oversized, the number of bytes that must be removed. A first buy adds instruction bytes, so the meter accounts for it before the user commits.
+4. **Prepare** — the server rebuilds the transaction with a fresh blockhash: the pump.fun create instruction (and the buy instruction when a first buy is requested), a no-op instruction carrying the commitment payload, and compute-budget configuration. The fee payer is the connected wallet. The serialized bytes and a single-use submit token are returned.
+5. **Two signatures, no server key** — the browser signs the message bytes with the client-held mint keypair (raw ed25519 detached signature), then Phantom signs as the fee payer. The server never holds the mint secret and never signs a public launch.
+6. **Submit** — the fully signed transaction is returned to the server, which verifies both signatures are present, simulates, sends it to Solana mainnet, and records the launch.
+7. **Confirm and verify** — the finalized transaction is read back from chain. The commitment header, the SHA-256 digest of the embedded bytes, the byte count, and the coin's on-chain existence must all check out before the launch is reported as `atomicV1Verified`.
+
+### The commitment payload
+
+The image is not simply dumped into the transaction. It is prefixed with a fixed header so a verifier can find it and prove it belongs to this specific coin:
+
+```text
+"VALIDATE" ‖ 0x01 ‖ coinMint (32 bytes) ‖ sha256(image) (32 bytes) ‖ image bytes
+```
+
+Verification scans the raw wire bytes for this prefix, requires the embedded mint to be a declared signer of the transaction, and re-hashes the trailing image bytes against the embedded digest. A mismatched hash, an unsigned mint, or truncated bytes all fail the check — the header alone proves nothing.
+
+### Who pays and who signs
+
+| | Public launch (`/atomic-v1`) | Admin launch (`/admin/atomic-v1`) |
+| --- | --- | --- |
+| Fee payer | Connected Phantom wallet | Admin mint wallet |
+| On-chain `creator` | Connected wallet | Admin mint wallet |
+| Coin mint keypair | Generated and held in the browser | Derived server-side |
+| Signing | Wallet + client-held mint key | Server-signed |
+| First buy | Optional, paid by the user | Optional, paid by the admin wallet |
+
+The public path is fully self-contained: it never loads `ADMIN_MINT_WALLET_SECRET_KEY` or `MINT_WALLET_SECRET_KEY`. The wallet that launches the coin is the wallet recorded on-chain as its creator, which is also what routes creator fees correctly.
+
+### Constraints
+
+| Constraint | Detail |
+| --- | --- |
+| Transaction size | The complete signed transaction must fit the version 1 wire limit; the size meter reports the exact remaining budget. |
+| Image size | Bounded by the remaining transaction capacity after the create, buy, commitment, and compute instructions — far smaller than the 1 MB chunked path. |
+| Image types | PNG, JPEG, GIF, WebP, validated by byte signature. |
+| Wallet support | Version 1 signing is attempted directly. A wallet that cannot sign a v1 transaction surfaces its error; there is no downgrade to a smaller-image v0 launch. |
+| Immutability | Name, ticker, and the embedded image bytes are permanent once the transaction finalizes. Only the off-chain social links remain editable afterwards. |
+| Network | Solana mainnet only; the genesis hash is checked before any transaction is built. |
+| Rate limit | Three launches per hour per wallet address. |
+
+### Atomic V1 versus chunked inscription
+
+| | Atomic V1 | Chunked Metaplex inscription |
+| --- | --- | --- |
+| Transactions | One | Hundreds to ~1,300 |
+| Time to complete | Seconds | Minutes to hours, via a background worker |
+| Partial state possible | No | Yes, resumable by design |
+| Image size | Small, bounded by one transaction | Up to 1 MB |
+| Image location | Instruction data of the launch transaction | Dedicated inscription accounts |
+| Coin and image created together | Yes, atomically | No, separate steps |
+| Metadata editable after launch | Social links only | Image, name, ticker, description while authority is retained |
+
+Atomic V1 is the right choice when the point is that the coin and its image are inseparable. Chunked inscription remains the right choice for larger images and for coins whose displayed metadata should stay updateable.
 
 ## Flagship: Inscribing on V1 with Metaplex
 
@@ -398,6 +491,8 @@ src/
 │   ├── Home.jsx                         # Punks landing and verification experience
 │   ├── PublicInscribe.jsx               # Wallet-paid public inscription
 │   ├── PublicLaunch.jsx                 # Wallet-paid public pump.fun launch
+│   ├── PublicAtomicV1Launch.jsx         # User-signed Atomic V1 image launch
+│   ├── AdminAtomicV1Launch.jsx          # Admin server-signed Atomic V1 launch
 │   ├── Feed.jsx                         # Shared social feed
 │   ├── SocialProfile.jsx                # Wallet profile page
 │   ├── AdminMint.jsx                    # Admin inscription and launch console
@@ -437,6 +532,9 @@ base44/
 │   ├── socialWallet/                    # Nonce issuance and signed social writes
 │   ├── launchPumpCoin/                  # Admin pump.fun launch endpoint
 │   ├── publicPumpLaunch/                # Wallet-paid pump.fun launch endpoint
+│   ├── publicAtomicV1Launch/            # User-signed Atomic V1 launch endpoint
+│   ├── atomicV1PumpLaunch/              # Admin Atomic V1 launch endpoint
+│   ├── atomicV1Metadata/                # Atomic V1 metadata resolver
 │   └── confirmLaunches/                 # Pending-launch settlement
 ├── workflows/
 │   ├── Background Inscription Queue.jsonc  # Scheduled inscription worker
@@ -445,7 +543,9 @@ base44/
     ├── verifyAllInscriptions.ts         # Combined verification orchestration
     ├── verifyInscription.ts             # Metaplex verification
     ├── verifyLibreplex.ts               # LibrePlex verification
-    ├── v1Transaction.ts                 # Versioned transaction parser
+    ├── v1Transaction.ts                 # Versioned transaction parser and v1 image verifier
+    ├── atomicV1Launch.ts                # Version 1 commitment payload and transaction builder
+    ├── atomicV1Launcher.ts              # Shared Atomic V1 launch, size, submit, and confirm logic
     ├── mintWallet.ts                    # Admin signer and network checks
     ├── pumpLaunch.ts                    # Stable mint and settlement helpers
     └── pumpPairs.ts                     # Supported pair catalog
@@ -532,6 +632,18 @@ Issues single-use wallet nonces and verifies wallet signatures for profile and p
 ### `publicPumpLaunch`
 
 Wallet-paid pump.fun launch endpoint for the public launch page, mirroring the admin launch flow with payment verification instead of admin authentication.
+
+### `publicAtomicV1Launch`
+
+Fully user-paid Atomic V1 endpoint. It exposes `size`, `prepare`, `submit`, and `confirm` actions: building the unsigned version 1 transaction with the connected wallet as fee payer and creator, accepting the wallet- and mint-signed transaction back for submission, and settling and verifying the result. It never loads an app signing wallet, and enforces three launches per hour per wallet.
+
+### `atomicV1PumpLaunch`
+
+Admin-only Atomic V1 endpoint. It keeps the server-signed flow: the admin mint wallet pays, signs, and creates the coin in one version 1 transaction carrying the image bytes.
+
+### `atomicV1Metadata`
+
+Public metadata resolver for Atomic V1 launches. It serves pump.fun-compatible JSON with the launch's immutable on-chain identity and its editable off-chain social links, with short-lived caching so link edits propagate quickly.
 
 ### `launchPumpCoin`
 
@@ -640,4 +752,4 @@ Run the app through `base44 dev`, confirm the project is linked to the correct B
 
 ---
 
-**Punks** — Less trust. More truth. · v2.0.0
+**Punks** — Less trust. More truth. · v2.1.0
