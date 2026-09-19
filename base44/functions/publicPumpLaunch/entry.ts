@@ -1,7 +1,8 @@
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
-import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
+import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, SystemProgram } from 'npm:@solana/web3.js@1.98.4';
+import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction } from 'npm:@solana/spl-token@0.4.14';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
 import { ensureLaunchLookupTable, stableLaunchKeys, withoutLaunchLookupAddresses } from '../../shared/launchLookupTable.ts';
@@ -164,8 +165,21 @@ export default async function(req: Request): Promise<Response> {
     );
     let lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
     const launchIxs = await buildLaunch(mint.publicKey);
+    const documentedSyncNativeDiscriminator = Buffer.from('050007ab23c79c8d', 'hex');
+    const sdkIncludesSyncNative = isSol && launchIxs.some(ix =>
+      ix.programId.equals(quote.quoteTokenProgram)
+      && (Buffer.from(ix.data).subarray(0, documentedSyncNativeDiscriminator.length).equals(documentedSyncNativeDiscriminator)
+        || (ix.data.length === 1 && ix.data[0] === 17))
+    );
+    const solWrapIxs = !isSol ? [] : [
+      createAssociatedTokenAccountIdempotentInstruction(wallet, userQuoteAccount, wallet, quote.mint, quote.quoteTokenProgram, associatedTokenProgram),
+      ...(!sdkIncludesSyncNative ? [
+        SystemProgram.transfer({ fromPubkey: wallet, toPubkey: userQuoteAccount, lamports: BigInt(quoteAmount.toString()) }),
+        createSyncNativeInstruction(userQuoteAccount, quote.quoteTokenProgram),
+      ] : []),
+    ];
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
+    const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...solWrapIxs, ...launchIxs];
     let encoded;
     try {
       encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
