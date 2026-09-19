@@ -11,7 +11,7 @@ import { secrets } from 'base44:runtime';
 import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
 import { launchMint, isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
-import { checkMetadataProxy, walletOwnsInscription } from '../../shared/pumpLaunchValidation.ts';
+import { checkMetadataProxy } from '../../shared/pumpLaunchValidation.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../shared/pumpPairs.ts';
 
@@ -123,7 +123,7 @@ export default async function(req: Request): Promise<Response> {
     try { ({ pair, quote } = await resolveSupportedPair(onlineSdk, input.quoteMint)); }
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
     const proof = await verifyInscription(input.inscribedMint);
-    if (proof.status !== 'valid' || !await walletOwnsInscription(rpcUrl, walletAddress, input.inscribedMint, proof)) return Response.json({ error: proof.reason || proof.message || 'The connected wallet must control this valid inscription.' }, { status: 422 });
+    if (proof.status !== 'valid') return Response.json({ error: proof.reason || proof.message || 'This is not a valid inscription.' }, { status: 422 });
     const uri = metadataUri(input.inscribedMint, socials);
     const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
     if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
