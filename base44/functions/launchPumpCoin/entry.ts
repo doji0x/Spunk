@@ -10,16 +10,12 @@ import { launchMint, isLaunched, settleAttempt, metadataUri, imageUri } from '..
 import { supportedPairOptions } from '../../shared/pumpPairs.ts';
 import { checkMetadataProxy, walletOwnsInscription } from '../../shared/pumpLaunchValidation.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
+import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
+import { ensureLaunchLookupTable, stableLaunchKeys } from '../../shared/launchLookupTable.ts';
+import { atomicAmount, devBuyInstructions, token2022Program } from '../../shared/pumpBuy.ts';
 
 const minLamports = 30_000_000;
-const token2022Program = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-function atomicAmount(value, decimals) {
-  if (typeof value !== 'string' || !/^\d+(\.\d+)?$/.test(value) || Number(value) <= 0) throw new Error('Enter a positive first-buy amount.');
-  const [whole, fraction = ''] = value.split('.');
-  if (fraction.length > decimals) throw new Error(`This pair asset supports at most ${decimals} decimal places.`);
-  return new BN(`${whole}${fraction.padEnd(decimals, '0')}`.replace(/^0+(?=\d)/, ''));
-}
 async function accountExists(rpcUrl, address) { return Boolean((await rpcRequest(rpcUrl, 'getAccountInfo', [address, { encoding: 'base64', commitment: 'confirmed' }])).value); }
 async function tokenBalance(rpcUrl, owner, mint) {
   const result = await rpcRequest(rpcUrl, 'getTokenAccountsByOwner', [owner, { mint }, { encoding: 'jsonParsed', commitment: 'confirmed' }]);
@@ -30,11 +26,10 @@ function signedTransaction(instructions, latest, wallet) {
   tx.sign(wallet);
   return tx.serialize().toString('base64');
 }
-function signedVersionedTransaction(instructions, latest, wallet, mint = null) {
-  const message = new TransactionMessage({ payerKey: wallet.publicKey, recentBlockhash: latest.blockhash, instructions }).compileToV0Message();
-  const tx = new VersionedTransaction(message);
-  tx.sign(mint ? [wallet, mint] : [wallet]);
-  return Buffer.from(tx.serialize()).toString('base64');
+// Every launch transaction compiles against the shared lookup table, which is what
+// keeps create + first buy inside Solana's 1232-byte ceiling.
+function signedVersionedTransaction(instructions, latest, wallet, mint = null, lookupTables = []) {
+  return compileLaunchTransaction({ payerKey: wallet.publicKey, instructions, blockhash: latest.blockhash, lookupTables, signers: mint ? [wallet, mint] : [wallet] }).encoded;
 }
 
 export default async function(req: Request): Promise<Response> {
@@ -54,6 +49,7 @@ export default async function(req: Request): Promise<Response> {
 
     const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     const wallet = Keypair.fromSecretKey(walletBytes);
+
     if (body.action === 'configureSharing') {
       const [attempt] = await base44.entities.LaunchAttempt.filter({ requestId: String(body.requestId || '') });
       if (!attempt || attempt.status !== 'confirmed') return Response.json({ error: 'Confirm the coin launch before configuring fee sharing.' }, { status: 409 });
@@ -102,12 +98,17 @@ export default async function(req: Request): Promise<Response> {
     if (pair.symbol !== 'SOL' && await tokenBalance(rpcUrl, wallet.publicKey.toBase58(), input.quoteMint) < BigInt(quoteAmount.toString())) return Response.json({ error: `The mint wallet lacks ${pair.symbol} for the first buy.`, safeToEdit }, { status: 422 });
     const feeConfig = await onlineSdk.fetchFeeConfig(), quoteControl = await onlineSdk.fetchQuoteControl(), fee = input.creatorFeeBps ? new BN(input.creatorFeeBps) : undefined;
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
+    const createAmount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
+    // Two throwaway mints reveal which accounts are mint-independent. Those are the
+    // only ones safe to keep in a long-lived lookup table, and they are also the
+    // accounts that make create + buy overflow when spelled out in full.
+    const probeMints = [Keypair.generate().publicKey, Keypair.generate().publicKey];
+    const probeSets = await Promise.all(probeMints.map(probe => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: probe, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, amount: createAmount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false })));
+    const lookupTables = [await ensureLaunchLookupTable(base44, rpcUrl, wallet, stableLaunchKeys(probeSets, [wallet.publicKey, ...probeMints]))];
 
     if (launched) {
-      const buyState = await onlineSdk.fetchBuyState(mint.publicKey, wallet.publicKey, token2022Program, quote.mint);
-      const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: buyState.bondingCurve, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
-      const buyIxs = await PUMP_SDK.buyV2Instructions({ global, bondingCurveAccountInfo: buyState.bondingCurveAccountInfo, bondingCurve: buyState.bondingCurve, associatedUserAccountInfo: buyState.associatedUserAccountInfo, mint: mint.publicKey, user: wallet.publicKey, amount, quoteAmount, slippage: 0, tokenProgram: token2022Program, quoteTokenProgram: quote.quoteTokenProgram });
-      const buildBuy = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...buyIxs], latest, wallet);
+      const buyIxs = await devBuyInstructions({ onlineSdk, global, feeConfig, quoteControl, mintKey: mint.publicKey, user: wallet.publicKey, quoteAmount, quote, creatorFeeBps: fee });
+      const buildBuy = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...buyIxs], latest, wallet, null, lookupTables);
       const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [buildBuy(300000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
       if (simulation.err) return Response.json({ error: `First-buy simulation failed: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
       if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, phase: 'buy', logs: simulation.logs, safeToEdit });
@@ -116,22 +117,15 @@ export default async function(req: Request): Promise<Response> {
       catch (error) { await save({ status: 'expired', phase: 'buy_ready', error: `First buy sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
     }
 
-    const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
-    const launchIxs = await PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
+    const launchIxs = await PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, amount: createAmount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
     const atomicIxs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs];
-    let atomicTransaction = null;
-    try { atomicTransaction = signedVersionedTransaction(atomicIxs, latest, wallet, mint); }
-    catch (error) { if (!/encoding overruns|too large|Transaction too large/i.test(error.message)) throw error; }
-
-    if (!atomicTransaction) {
-      const createIx = await PUMP_SDK.createV2Instruction({ mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet.publicKey, user: wallet.publicKey, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
-      const buildCreate = units => signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), createIx], latest, wallet, mint);
-      const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [buildCreate(300000), { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
-      if (simulation.err) return Response.json({ error: `Coin-creation simulation failed: ${JSON.stringify(simulation.err)}`, logs: simulation.logs, safeToEdit }, { status: 422 });
-      if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, phase: 'create', logs: simulation.logs, safeToEdit });
-      safeToEdit = false; await save({ status: 'pending', phase: 'create_pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
-      try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [buildCreate(Math.min(1400000, Math.max(300000, Math.ceil((simulation.unitsConsumed || 240000) * 1.2)))), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
-      catch (error) { await save({ status: 'expired', phase: 'create_pending', error: `Coin creation sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
+    // Create and first buy ship together or not at all: there is no create-only path,
+    // so a launch can never leave a coin on-chain without its dev buy.
+    let atomicTransaction;
+    try { atomicTransaction = signedVersionedTransaction(atomicIxs, latest, wallet, mint, lookupTables); }
+    catch (error) {
+      if (!(error instanceof TransactionTooLargeError)) throw error;
+      return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker, or use a SOL pair, and try again.`, safeToEdit }, { status: 422 });
     }
 
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [atomicTransaction, { encoding: 'base64', commitment: 'confirmed', sigVerify: true }])).value;
@@ -139,7 +133,7 @@ export default async function(req: Request): Promise<Response> {
     const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
     if (body.simulate === true) return Response.json({ simulated: true, coinMint, bondingCurve, units, logs: simulation.logs, safeToEdit });
     safeToEdit = false; await save({ status: 'pending', phase: 'atomic_pending', signature: '', error: '', lastValidBlockHeight: latest.lastValidBlockHeight });
-    try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
+    try { const signature = await rpcRequest(rpcUrl, 'sendTransaction', [signedVersionedTransaction([ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], latest, wallet, mint, lookupTables), { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 2 }]); await save({ signature }); return Response.json({ attempt, safeToEdit }); }
     catch (error) { if (await isLaunched(rpcUrl, coinMint, bondingCurve)) return Response.json({ attempt: await save({ status: 'confirmed', phase: 'complete', error: '' }), safeToEdit }); await save({ status: 'expired', error: `Sending failed: ${error.message}. Resume with the same mint.` }); return Response.json({ attempt, error: attempt.error, safeToEdit }, { status: 502 }); }
   } catch (error) { return Response.json({ error: error.message || 'Unable to complete the launch.', safeToEdit }, { status: 500 }); }
 }

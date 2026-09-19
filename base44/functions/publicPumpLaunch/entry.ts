@@ -1,6 +1,11 @@
 import { Buffer } from 'node:buffer';
 import BN from 'npm:bn.js@5.2.2';
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
+import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
+import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
+import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
+import { ensureLaunchLookupTable, stableLaunchKeys } from '../../shared/launchLookupTable.ts';
+import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
 import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
@@ -76,7 +81,7 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ status: state?.err ? 'failed' : launched ? 'confirmed' : 'pending', error: state?.err ? JSON.stringify(state.err) : '' });
     }
     if (body.action !== 'prepare') return Response.json({ error: 'Invalid public launch action.' }, { status: 400 });
-    const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || ''), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
+    const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || ''), firstBuyAmount: String(body.firstBuyAmount || '').trim(), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
     let socials, recipients;
     try { socials = { website: socialUrl(body.website, 'website'), twitter: socialUrl(body.twitter, 'X / Twitter'), github: socialUrl(body.github, 'GitHub') }; recipients = parseRecipients(body.feeRecipients, input.holderReward); }
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
@@ -87,8 +92,6 @@ export default async function(req: Request): Promise<Response> {
     const uri = metadataUri(input.inscribedMint, socials);
     const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
     if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
-    const balance = (await rpcRequest(rpcUrl, 'getBalance', [walletAddress, { commitment: 'confirmed' }])).value;
-    if (balance < 30_000_000) return Response.json({ error: 'This wallet needs at least 0.03 SOL for launch rent and network fees.' }, { status: 422 });
     const wallet = new PublicKey(walletAddress);
     const walletBytes = parseWallet(secrets.get('MINT_WALLET_SECRET_KEY'));
     const mint = await launchMint(walletBytes, walletAddress, input);
@@ -98,15 +101,34 @@ export default async function(req: Request): Promise<Response> {
     if (input.holderReward && !global.isHolderRewardEnabled) return Response.json({ error: 'pump.fun currently has holder rewards disabled.' }, { status: 422 });
     if (!Number.isInteger(input.creatorFeeBps) || input.creatorFeeBps < 0 || input.creatorFeeBps > maxFee || (input.creatorFeeBps > 0 && !global.creatorFeeConfigurable)) return Response.json({ error: 'The creator fee is outside pump.fun’s current allowed range.' }, { status: 400 });
     const quote = await onlineSdk.resolveQuoteMint(solMint);
-    const instruction = await PUMP_SDK.createV2Instruction({ mint: mint.publicKey, name: input.name, symbol: input.symbol, uri, creator: wallet, user: wallet, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: new BN(input.creatorFeeBps), holderReward: input.holderReward, mayhemMode: false });
+    let quoteAmount;
+    try { quoteAmount = atomicAmount(input.firstBuyAmount, quote.decimals); }
+    catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
+    const balance = (await rpcRequest(rpcUrl, 'getBalance', [walletAddress, { commitment: 'confirmed' }])).value;
+    if (balance < 30_000_000 + Number(quoteAmount.toString())) return Response.json({ error: 'This wallet needs your first-buy amount plus about 0.03 SOL for launch rent and network fees.' }, { status: 422 });
+    const feeConfig = await onlineSdk.fetchFeeConfig();
+    const quoteControl = await onlineSdk.fetchQuoteControl();
+    const fee = input.creatorFeeBps ? new BN(input.creatorFeeBps) : undefined;
+    const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
+    const buildLaunch = coinMint => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: coinMint, name: input.name, symbol: input.symbol, uri, creator: wallet, user: wallet, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
+    // Same lookup-table construction the admin launch uses, so both surfaces fit
+    // create + first buy into one atomic transaction.
+    const probeMints = [Keypair.generate().publicKey, Keypair.generate().publicKey];
+    const probeSets = await Promise.all(probeMints.map(buildLaunch));
+    const base44 = createClientFromRequest(req);
+    const lookupTables = [await ensureLaunchLookupTable(base44, rpcUrl, Keypair.fromSecretKey(walletBytes), stableLaunchKeys(probeSets, [wallet, ...probeMints]))];
+    const launchIxs = await buildLaunch(mint.publicKey);
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
-    const message = new TransactionMessage({ payerKey: wallet, recentBlockhash: latest.blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 350000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), instruction] }).compileToV0Message();
-    const transaction = new VersionedTransaction(message);
-    transaction.sign([mint]);
-    const encoded = Buffer.from(transaction.serialize()).toString('base64');
+    let encoded;
+    try {
+      encoded = compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 500000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
+    } catch (error) {
+      if (!(error instanceof TransactionTooLargeError)) throw error;
+      return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
+    }
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
-    if (simulation.err) return Response.json({ error: `Launch simulation failed: ${JSON.stringify(simulation.err)}` }, { status: 422 });
-    return Response.json({ transaction: encoded, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
+    if (simulation.err) return Response.json({ error: `Launch simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}` }, { status: 422 });
+    return Response.json({ transaction: encoded, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }

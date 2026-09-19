@@ -1,0 +1,52 @@
+{
+  "name": "LaunchLookupTable",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "description": "Stable identifier for this shared address lookup table."
+    },
+    "address": {
+      "type": "string",
+      "description": "On-chain address lookup table account."
+    },
+    "authority": {
+      "type": "string",
+      "description": "Wallet allowed to extend the table."
+    },
+    "addresses": {
+      "type": "array",
+      "description": "Stable pump.fun accounts stored in the table.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "label",
+    "address",
+    "authority"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

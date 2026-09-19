@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 import { phantomTransaction } from '@/lib/phantomTransaction';
 
-const initial = { inscribedMint: '', name: '', symbol: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [], website: '', twitter: '', github: '' };
+const initial = { inscribedMint: '', name: '', symbol: '', firstBuyAmount: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [], website: '', twitter: '', github: '' };
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 export default function usePublicPumpLaunch() {
   const wallet = usePhantomWallet();
