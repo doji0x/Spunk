@@ -22,6 +22,7 @@ import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
 import ProofOfFart from '@/pages/ProofOfFart';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
+import MobileMenuSheet from '@/components/nav/MobileMenuSheet';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -82,7 +83,12 @@ function App() {
         <Router>
           <PhantomWalletProvider>
             <ScrollToTop />
-            <AuthenticatedApp />
+            <div className="mobile-navigation-shell">
+              <nav aria-label="Mobile page navigation" className="sticky top-0 z-40 flex h-14 items-center justify-end border-b border-border bg-background px-4 sm:hidden">
+                <MobileMenuSheet showLabel={false} triggerClassName="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:text-primary" />
+              </nav>
+              <AuthenticatedApp />
+            </div>
           </PhantomWalletProvider>
         </Router>
         <Toaster />

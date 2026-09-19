@@ -96,6 +96,9 @@
     @apply border-border outline-ring/50;
   }
 
+  @media (max-width: 639px) {
+    .mobile-navigation-shell header.sticky { top: 3.5rem; }
+  }
   html { scroll-behavior: smooth; color-scheme: dark; }
   body {
     @apply bg-background text-foreground font-body antialiased;
