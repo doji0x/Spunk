@@ -1,5 +1,6 @@
 import React from 'react';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import AtomicV1Hero from '@/components/atomic/AtomicV1Hero';
 import { Link } from 'react-router-dom';
 import AtomicV1Form from '@/components/atomic/AtomicV1Form';
 import AtomicV1Result from '@/components/atomic/AtomicV1Result';
@@ -15,11 +16,7 @@ export default function PublicAtomicV1Launch() {
       <WalletButton />
     </div></header>
     <main className="mx-auto max-w-2xl space-y-7 px-4 py-9 pb-24 sm:px-6">
-      <div className="flex items-start gap-4"><span className="rounded-2xl bg-primary p-3 text-primary-foreground"><ShieldCheck size={21} /></span><div>
-        <h2 className="font-display text-3xl font-bold tracking-tight">One launch. One image. One signature.</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">Create a Pump.fun coin and permanently embed a tiny image inside the same Solana V1 launch transaction. The normal Pump image and the transaction-inscribed bytes are identical, so anyone can verify the coin's image on-chain.</p>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">Your wallet pays, signs, and is written on-chain as the coin creator, so it receives creator fees. The coin mint key is generated in your browser and never leaves it. The on-chain name, ticker, and image bytes are immutable once the transaction lands — only the standard links can be edited later.</p>
-      </div></div>
+      <AtomicV1Hero />
       {!state.wallet.address && <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">Connect your Phantom wallet to start an atomic V1 launch.</p>}
       {!state.result && <AtomicV1Form state={state} />}
       <AtomicV1Result result={state.result} onCheck={state.check} busy={state.busy} linksTo={null} />
