@@ -163,14 +163,12 @@ export default async function(req: Request): Promise<Response> {
       Keypair.fromSecretKey(walletBytes),
       stableLaunchKeys(probeSets, [wallet, ...probeMints, ...staticQuoteAccounts]),
     );
-    let lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
+    // The user's WSOL account stays a static key so Phantom's pre-sign simulation
+    // never depends on a freshly extended lookup table.
+    const lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
     const launchIxs = await buildLaunch(mint.publicKey);
-    const documentedSyncNativeDiscriminator = Buffer.from('050007ab23c79c8d', 'hex');
-    const sdkIncludesSyncNative = isSol && launchIxs.some(ix =>
-      ix.programId.equals(quote.quoteTokenProgram)
-      && (Buffer.from(ix.data).subarray(0, documentedSyncNativeDiscriminator.length).equals(documentedSyncNativeDiscriminator)
-        || (ix.data.length === 1 && ix.data[0] === 17))
-    );
+    // SPL Token syncNative is instruction index 17 (single-byte data).
+    const sdkIncludesSyncNative = isSol && launchIxs.some(ix => ix.programId.equals(quote.quoteTokenProgram) && ix.data.length === 1 && ix.data[0] === 17);
     const solWrapIxs = !isSol ? [] : [
       createAssociatedTokenAccountIdempotentInstruction(wallet, userQuoteAccount, wallet, quote.mint, quote.quoteTokenProgram, associatedTokenProgram),
       ...(!sdkIncludesSyncNative ? [
@@ -185,17 +183,7 @@ export default async function(req: Request): Promise<Response> {
       encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
     } catch (error) {
       if (!(error instanceof TransactionTooLargeError)) throw error;
-      if (isSol) {
-        const fallbackTable = await ensureLaunchLookupTable(base44, rpcUrl, Keypair.fromSecretKey(walletBytes), stableLaunchKeys(probeSets, [wallet, ...probeMints]));
-        lookupTables = [fallbackTable];
-        try { encoded = compileLaunchTransaction({ payerKey: wallet, instructions, blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded; }
-        catch (fallbackError) {
-          if (!(fallbackError instanceof TransactionTooLargeError)) throw fallbackError;
-          return Response.json({ error: `Create and first buy do not fit in one transaction (${fallbackError.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
-        }
-      } else {
-        return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
-      }
+      return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
     }
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
     if (simulation.err) return Response.json({ error: `Launch simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}` }, { status: 422 });
