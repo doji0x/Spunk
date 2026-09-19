@@ -3,6 +3,10 @@ import { AddressLookupTableAccount, AddressLookupTableProgram, PublicKey, Transa
 import { rpcRequest } from './mintWallet.ts';
 
 const label = 'pump-launch-v1';
+// Public launches keep their own table: it holds only user- and mint-independent
+// accounts and is owned by the admin mint wallet, so it is created once and never
+// extended (or paid for) per launch.
+export const publicLaunchTableLabel = 'pump-launch-public-v1';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Program ids must stay in the static key list, and signers can never be looked up,
@@ -64,16 +68,16 @@ export async function readLaunchLookupTable(base44, rpcUrl) {
 
 // Returns the shared lookup table, creating it and extending it with any missing
 // stable accounts. Runs at most once per new account set, not once per launch.
-export async function ensureLaunchLookupTable(base44, rpcUrl, wallet, addresses) {
+export async function ensureLaunchLookupTable(base44, rpcUrl, wallet, addresses, tableLabel = label) {
   const required = [...new Set(addresses)];
-  let [record] = await base44.asServiceRole.entities.LaunchLookupTable.filter({ label });
+  let [record] = await base44.asServiceRole.entities.LaunchLookupTable.filter({ label: tableLabel });
   let table = record?.address ? await readTable(rpcUrl, record.address) : null;
   if (!table) {
     const recentSlot = await rpcRequest(rpcUrl, 'getSlot', [{ commitment: 'finalized' }]);
     const [instruction, lookupTableAddress] = AddressLookupTableProgram.createLookupTable({ authority: wallet.publicKey, payer: wallet.publicKey, recentSlot });
     await sendAndConfirm(rpcUrl, wallet, [instruction]);
     const address = lookupTableAddress.toBase58();
-    const data = { label, address, authority: wallet.publicKey.toBase58(), addresses: [] };
+    const data = { label: tableLabel, address, authority: wallet.publicKey.toBase58(), addresses: [] };
     record = record ? await base44.asServiceRole.entities.LaunchLookupTable.update(record.id, data) : await base44.asServiceRole.entities.LaunchLookupTable.create(data);
     table = await readTable(rpcUrl, address);
     if (!table) throw new Error('The new lookup table could not be read back. Retry the launch.');

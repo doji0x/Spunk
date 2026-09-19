@@ -4,11 +4,11 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from 'npm:@solana/web3.js@1.98.4';
 import { getBuyTokenAmountFromSolAmount } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { compileLaunchTransaction, TransactionTooLargeError } from '../../shared/launchTransaction.ts';
-import { ensureLaunchLookupTable, stableLaunchKeys, withoutLaunchLookupAddresses } from '../../shared/launchLookupTable.ts';
+import { ensureLaunchLookupTable, stableLaunchKeys, publicLaunchTableLabel } from '../../shared/launchLookupTable.ts';
 import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
-import { parseWallet, assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
+import { parseWallet, assertMainnet, rpcRequest, adminWalletSecretName } from '../../shared/mintWallet.ts';
 import { verifyInscription } from '../../shared/verifyInscription.ts';
 import { launchMint, isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { checkMetadataProxy } from '../../shared/pumpLaunchValidation.ts';
@@ -179,27 +179,23 @@ export default async function(req: Request): Promise<Response> {
     const quoteControl = await onlineSdk.fetchQuoteControl();
     const fee = input.creatorFeeBps ? new BN(input.creatorFeeBps) : undefined;
     const amount = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: quoteAmount, quoteMint: quote.mint, quoteControl, creatorFeeBps: fee });
-    const buildLaunch = coinMint => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: coinMint, name: input.name, symbol: input.symbol, uri, creator: wallet, user: wallet, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
-    // Same lookup-table construction the admin launch uses, so both surfaces fit
-    // create + first buy into one atomic transaction.
-    const probeMints = [Keypair.generate().publicKey, Keypair.generate().publicKey];
-    const probeSets = await Promise.all(probeMints.map(buildLaunch));
-    const userQuoteAccount = PublicKey.findProgramAddressSync(
-      [wallet.toBuffer(), quote.quoteTokenProgram.toBuffer(), quote.mint.toBuffer()],
-      associatedTokenProgram,
-    )[0];
-    const staticQuoteAccounts = isSol ? [userQuoteAccount] : [];
+    const buildLaunch = (coinMint, user = wallet) => PUMP_SDK.createV2AndBuyV2Instructions({ global, mint: coinMint, name: input.name, symbol: input.symbol, uri, creator: user, user, amount, quoteAmount, quoteMint: quote.mint, quoteTokenProgram: quote.quoteTokenProgram, creatorFeeBps: fee, holderReward: input.holderReward, mayhemMode: false });
+    // Probe with two different mints AND two different users: only accounts shared by
+    // both sets are global (fee recipients, PDAs, vaults), so the table never holds a
+    // user-derived account and never needs a per-launch extension.
+    const probes = [[Keypair.generate().publicKey, Keypair.generate().publicKey], [Keypair.generate().publicKey, Keypair.generate().publicKey]];
+    const probeSets = await Promise.all(probes.map(([probeMint, probeUser]) => buildLaunch(probeMint, probeUser)));
+    // The table is created once by the funded admin mint wallet, never by the launch wallet.
     const table = await ensureLaunchLookupTable(
       createClientFromRequest(req),
       rpcUrl,
-      Keypair.fromSecretKey(walletBytes),
-      stableLaunchKeys(probeSets, [wallet, ...probeMints, ...staticQuoteAccounts]),
+      Keypair.fromSecretKey(parseWallet(secrets.get(adminWalletSecretName), adminWalletSecretName)),
+      stableLaunchKeys(probeSets, probes.flat()),
+      publicLaunchTableLabel,
     );
-    // The user's WSOL account stays a static key so Phantom's pre-sign simulation
-    // never depends on a freshly extended lookup table.
-    const lookupTables = [withoutLaunchLookupAddresses(table, staticQuoteAccounts)];
-    // The pump program debits SOL natively from the user on legacy (SOL) trades,
-    // so no WSOL wrap is prepended — same shape as the admin launch.
+    const lookupTables = [table];
+    // The pump program debits SOL natively from the user on SOL-paired trades, so no
+    // WSOL wrap is prepended. User-derived accounts stay static keys in the message.
     const launchIxs = await buildLaunch(mint.publicKey);
     const latest = (await rpcRequest(rpcUrl, 'getLatestBlockhash', [{ commitment: 'confirmed' }])).value;
     const build = units => compileLaunchTransaction({ payerKey: wallet, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }), ...launchIxs], blockhash: latest.blockhash, lookupTables, signers: [mint] }).encoded;
@@ -210,9 +206,11 @@ export default async function(req: Request): Promise<Response> {
       if (!(error instanceof TransactionTooLargeError)) throw error;
       return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
     }
-    const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
-    // Non-blocking preflight: a transient failure here (e.g. lookup-table lag on the
-    // sim node) must not stop the launch — sendTransaction's own preflight is final.
+    // Non-blocking preflight: a failure here (value.err or a JSON-RPC error) is captured
+    // for the UI and logged, never thrown — sendTransaction's own preflight is final.
+    let simulation;
+    try { simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value; }
+    catch (error) { simulation = { err: error.message, logs: [], unitsConsumed: 0 }; }
     if (simulation.err) console.warn('publicPumpLaunch preflight simulation failed; continuing', JSON.stringify(simulation.err), (simulation.logs || []).slice(-8).join('\n'));
     // Size the compute budget from what the simulation actually consumed, same as the admin path.
     const units = Math.min(1400000, Math.max(500000, Math.ceil((simulation.unitsConsumed || 420000) * 1.2)));
@@ -223,7 +221,7 @@ export default async function(req: Request): Promise<Response> {
     attempt = attempt ? await attempts.update(attempt.id, record) : await attempts.create(record);
     // Surface our RPC's view of the transaction so a Phantom-side simulation failure
     // can be compared against it instead of guessed at.
-    const preflight = { ok: !simulation.err, error: simulation.err ? JSON.stringify(simulation.err) : '', unitsConsumed: simulation.unitsConsumed || 0, logs: (simulation.logs || []).slice(-12) };
+    const preflight = { ok: !simulation.err, error: simulation.err ? (typeof simulation.err === 'string' ? simulation.err : JSON.stringify(simulation.err)) : '', unitsConsumed: simulation.unitsConsumed || 0, logs: (simulation.logs || []).slice(-12) };
     return Response.json({ ...launchSummary, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight, preflight });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
