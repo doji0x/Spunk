@@ -11,6 +11,7 @@ import InscriptionExamples from '@/components/InscriptionExamples';
 import SupportToken from '@/components/SupportToken';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
+import AtomicV1Hero from '@/components/atomic/AtomicV1Hero';
 import { Image } from '@/components/ui/image';
 import { Link } from 'react-router-dom';
 
@@ -54,6 +55,11 @@ export default function Home() {
         {supportEnabled ? 'Disable Support' : 'Enable Support'}
       </button>
       {supportEnabled && <div className="rounded-md bg-secondary p-4 text-secondary-foreground">Support features are now enabled.</div>}
+
+      <div className="mt-16 text-left">
+        <AtomicV1Hero />
+        <Link to="/atomic-v1" className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Launch an Atomic V1 coin <ArrowUpRight size={14} /></Link>
+      </div>
 
       <section className="mt-16 rounded-3xl border border-primary/25 bg-card p-7 text-left sm:p-9" aria-labelledby="proof-of-fart-heading">
         <p className="font-mono text-[9px] tracking-[0.18em] text-primary">ON-CHAIN AUDIO EXPERIMENT</p>
