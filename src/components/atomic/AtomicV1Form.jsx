@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AtomicV1SizeMeter from './AtomicV1SizeMeter';
 import AtomicV1ImagePreview from './AtomicV1ImagePreview';
+import AtomicV1ImageLimitNotice from './AtomicV1ImageLimitNotice';
 import LaunchLinksFields from '@/components/launch/LaunchLinksFields';
 
 export default function AtomicV1Form({ state }) {
@@ -17,7 +18,8 @@ export default function AtomicV1Form({ state }) {
     <div className="space-y-2"><Label htmlFor="atomic-buy">Optional first buy (SOL)</Label><Input id="atomic-buy" inputMode="decimal" pattern="^\d+(\.\d+)?$" value={input.firstBuyAmount} disabled={busy} placeholder="Leave blank for create only" className="font-mono" onChange={e => set('firstBuyAmount', e.target.value)} /></div>
     <AtomicV1ImagePreview file={file} size={size} />
     <div className="space-y-2"><Label className="text-sm">Standard links</Label><p className="text-xs leading-5 text-muted-foreground">Served off-chain with the coin metadata and editable after launch.</p><LaunchLinksFields links={links} onChange={setLink} disabled={busy} /></div>
-    <AtomicV1SizeMeter size={size} loading={sizing} />
+    <AtomicV1SizeMeter size={size} loading={sizing} hasFile={!!file} />
+    {!sizing && !size && <AtomicV1ImageLimitNotice file={file} />}
     {file && <p className="font-mono text-[10px] text-muted-foreground">Selected raw file: {file.size.toLocaleString()} bytes</p>}{error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <Button type="submit" disabled={busy || sizing || !size || size.remainingBytes < 0} className="gold-glow w-full rounded-full"><Rocket />{busy ? <><Loader2 className="animate-spin" />Launching and verifying…</> : 'Launch atomic V1 coin'}</Button>
   </form>;

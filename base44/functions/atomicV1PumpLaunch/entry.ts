@@ -14,6 +14,8 @@ import { cleanSocials } from '../../shared/launchSocials.ts';
 const solMint = new PublicKey('So11111111111111111111111111111111111111112');
 const appUrl = 'https://solvalidate.base44.app';
 const requestPattern = /^[0-9a-f-]{36}$/i;
+// Base64 payload cap; the practical raw-image limit is three quarters of it.
+const maxImageBase64Chars = 10000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function cleanInput(body) {
@@ -47,7 +49,11 @@ export default async function(req: Request): Promise<Response> {
     if (!['size', 'launch'].includes(body.action)) return Response.json({ error: 'Invalid Atomic V1 action.' }, { status: 400 });
     const input = cleanInput(body);
     if (!requestPattern.test(input.requestId) || !input.name || Buffer.byteLength(input.name) > 32 || !input.symbol || Buffer.byteLength(input.symbol) > 10 || input.description.length > 280) return Response.json({ error: 'Check the launch request, name, ticker, and description.' }, { status: 400 });
-    if (typeof body.imageBase64 !== 'string' || body.imageBase64.length > 10000) return Response.json({ error: 'A tiny image is required.' }, { status: 400 });
+    if (typeof body.imageBase64 !== 'string' || !body.imageBase64) return Response.json({ error: 'Select an image file before calculating the transaction size.' }, { status: 400 });
+    if (body.imageBase64.length > maxImageBase64Chars) {
+      const bytes = Math.floor(body.imageBase64.length * 3 / 4), maxBytes = Math.floor(maxImageBase64Chars * 3 / 4);
+      return Response.json({ error: `That image is ${bytes.toLocaleString()} bytes, over the ${maxBytes.toLocaleString()}-byte limit for an atomic V1 launch. Shrink it by at least ${(bytes - maxBytes).toLocaleString()} bytes.`, imageBytes: bytes, maxImageBytes: maxBytes }, { status: 413 });
+    }
     const imageBytes = Buffer.from(body.imageBase64, 'base64');
     const imageMime = detectImageMime(imageBytes);
     if (!imageMime || !isCompleteImage(imageBytes, imageMime)) return Response.json({ error: 'Upload a complete PNG, JPEG, GIF, or WebP image.' }, { status: 400 });

@@ -1,8 +1,8 @@
 import React from 'react';
 
-export default function AtomicV1SizeMeter({ size, loading }) {
+export default function AtomicV1SizeMeter({ size, loading, hasFile }) {
   if (loading) return <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">Calculating the exact signed V1 transaction size…</div>;
-  if (!size) return <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">Add the coin details and image to calculate the signed transaction size.</div>;
+  if (!size) return <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">{hasFile ? 'The signed transaction size could not be calculated for this image yet.' : 'Select an image to calculate size, then add the coin name and ticker.'}</div>;
   const over = size.remainingBytes < 0;
   const rows = [['Raw image', size.imageBytes], ['VALIDATE payload', size.commitmentBytes], ['Transaction without image', size.transactionBytesWithoutImage], ['Final signed transaction', size.finalSerializedTransactionBytes]];
   return <section className={`rounded-2xl border p-5 ${over ? 'border-destructive/60 bg-destructive/5' : 'border-primary/35 bg-card'}`}>
