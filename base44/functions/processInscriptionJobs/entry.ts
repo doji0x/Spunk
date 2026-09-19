@@ -48,12 +48,20 @@ export default async function(req: Request): Promise<Response> {
           log('On-chain preparation complete', `mint ${job.mint}`);
           await base44.asServiceRole.entities.MintRecord.update(job.id, { prepared: true, maxSupply: job.maxSupply, events });
         }
+        // Cover-first: the cover artwork must be fully written and hash-verified on-chain before any audio byte is spent.
+        const cover = await processCover(base44, job, signerSecretName, log, events, chunksPerJob);
+        if (!cover.done) {
+          await base44.asServiceRole.entities.MintRecord.update(job.id, { events, processedAt: new Date().toISOString() });
+          results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset, stage: 'cover', coverOffset: job.coverOffset });
+          continue;
+        }
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({ file_uri: sourceUri, expires_in: 300 });
         const fileResponse = await fetch(signed.signed_url);
         if (!fileResponse.ok) throw new Error('The private source media could not be loaded.');
         const bytes = Buffer.from(await fileResponse.arrayBuffer());
         if (bytes.length !== job.totalSize) throw new Error('The stored source media size no longer matches this mint.');
-        let processed = 0;
+        let processed = cover.used;
+        if (offset === 0 && processed < chunksPerJob && job.coverSourceUri) log('Audio inscription started', `cover verified · ${bytes.length} bytes of ${mediaType}`);
         while (offset < bytes.length && processed < chunksPerJob) {
           const chunk = bytes.subarray(offset, Math.min(offset + job.batchBytes, bytes.length));
           const response = await base44.functions.invoke('mintInscribedNft', { action: 'append', mint: job.mint, offset, totalSize: bytes.length, mimeType: mediaMime, data: chunk.toString('base64'), signerSecretName });
@@ -70,10 +78,6 @@ export default async function(req: Request): Promise<Response> {
         const progress = { offset, confirmedOffsets: [...confirmed].sort((a, b) => a - b), processedAt: new Date().toISOString(), errorMessage: '', signerPublicKey: signer, signerSecretName, events };
         await base44.asServiceRole.entities.MintRecord.update(job.id, progress);
         if (offset === bytes.length) {
-          if (!await processCover(base44, job, signerSecretName, log, events)) {
-            results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset, stage: 'cover' });
-            continue;
-          }
           const verification = await base44.functions.invoke('validateInscription', { address: job.mint });
           const proof = verification.data?.checks?.metaplex;
           if (proof?.status !== 'valid' || !proof.hash) {
