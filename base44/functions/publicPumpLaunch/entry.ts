@@ -178,7 +178,9 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ error: `Create and first buy do not fit in one transaction (${error.size} bytes), so nothing was launched. Shorten the coin name or ticker and try again.` }, { status: 422 });
     }
     const simulation = (await rpcRequest(rpcUrl, 'simulateTransaction', [encoded, { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
-    if (simulation.err) return Response.json({ error: `Launch simulation failed, so nothing was sent: ${JSON.stringify(simulation.err)}` }, { status: 422 });
+    // Non-blocking preflight: a transient failure here (e.g. lookup-table lag on the
+    // sim node) must not stop the launch — sendTransaction's own preflight is final.
+    if (simulation.err) console.warn('publicPumpLaunch preflight simulation failed; continuing', JSON.stringify(simulation.err), (simulation.logs || []).slice(-8).join('\n'));
     const preparedTransaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64'));
     const submitToken = await createSubmitToken(walletBytes, preparedTransaction.message.serialize());
     return Response.json({ transaction: encoded, submitToken, coinMint: mint.publicKey.toBase58(), bondingCurve: bondingCurvePda(mint.publicKey).toBase58(), lastValidBlockHeight: latest.lastValidBlockHeight, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials });
