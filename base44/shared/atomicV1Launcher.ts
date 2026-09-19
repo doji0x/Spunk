@@ -43,7 +43,7 @@ export function readAtomicV1Image(imageBase64) {
   return { imageBytes, imageMime };
 }
 
-async function pumpInstructions({ rpcUrl, mintKey, input, metadataUri, creator, payer }) {
+export async function pumpInstructions({ rpcUrl, mintKey, input, metadataUri, creator, payer }) {
   const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
   const global = await onlineSdk.fetchGlobal();
   const shared = { mint: mintKey, name: input.name, symbol: input.symbol, uri: metadataUri, creator, user: payer, mayhemMode: false, holderReward: false };

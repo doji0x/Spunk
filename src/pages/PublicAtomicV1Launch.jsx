@@ -18,10 +18,10 @@ export default function PublicAtomicV1Launch() {
       <div className="flex items-start gap-4"><span className="rounded-2xl bg-primary p-3 text-primary-foreground"><ShieldCheck size={21} /></span><div>
         <h2 className="font-display text-3xl font-bold tracking-tight">One launch. One image. One signature.</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">Create a Pump.fun coin and permanently embed a tiny image inside the same Solana V1 launch transaction. The normal Pump image and the transaction-inscribed bytes are identical, so anyone can verify the coin's image on-chain.</p>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">Your connected wallet is written on-chain as the coin creator and receives creator fees. The on-chain name, ticker, and image bytes are immutable once the transaction lands — only the standard links can be edited later.</p>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">Your wallet pays, signs, and is written on-chain as the coin creator, so it receives creator fees. The coin mint key is generated in your browser and never leaves it. The on-chain name, ticker, and image bytes are immutable once the transaction lands — only the standard links can be edited later.</p>
       </div></div>
       {!state.wallet.address && <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">Connect your Phantom wallet to start an atomic V1 launch.</p>}
-      {!state.result && <AtomicV1Form state={state} allowFirstBuy={false} />}
+      {!state.result && <AtomicV1Form state={state} />}
       <AtomicV1Result result={state.result} onCheck={state.check} busy={state.busy} linksTo={null} />
     </main>
   </div>;
