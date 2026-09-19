@@ -24,7 +24,7 @@ export default function AstraComposer({ onSend, busy }) {
     <p className={`mt-2 font-mono text-[10px] ${tooLong ? 'text-destructive' : 'text-muted-foreground'}`}>
       {tooLong
         ? `${value.trim().length.toLocaleString()} / ${maxChars.toLocaleString()} characters — trim ${(value.trim().length - maxChars).toLocaleString()} to send.`
-        : 'Astra commits straight to your working branch.'}
+        : 'Astra builds on a separate astra/* test branch you can review and merge.'}
     </p>
   </div>;
 }

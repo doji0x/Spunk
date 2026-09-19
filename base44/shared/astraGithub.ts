@@ -9,6 +9,9 @@ async function github(token, path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, { ...options, headers: { ...headers(token), ...(options.body ? { 'content-type': 'application/json' } : {}) } });
   const text = await response.text();
   const body = text ? JSON.parse(text) : {};
+  if (response.status === 403 && /not accessible by personal access token/i.test(body.message || '')) {
+    throw new Error('The GitHub token is read-only. Give it "Contents: Read and write" on this repository (GitHub → Settings → Developer settings → Fine-grained tokens), then update the ASTRA_GITHUB_TOKEN secret. No branch or commit is possible until then.');
+  }
   if (!response.ok) throw new Error(`GitHub ${response.status}: ${body.message || text.slice(0, 200)}`);
   return body;
 }
