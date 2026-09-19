@@ -22,8 +22,13 @@ export default function useAstraChat() {
     setBusy(true);
     setError('');
     setMessages(current => [...current, { id: `local-${Date.now()}`, role: 'user', content: text }]);
-    const response = await base44.functions.invoke('astraChat', { conversationId, message: text });
-    if (response.data?.error) setError(response.data.error);
+    try {
+      const response = await base44.functions.invoke('astraChat', { conversationId, message: text });
+      if (response.data?.error) setError(response.data.error);
+    } catch (requestError) {
+      // A rejected request throws, so read the server's explanation instead of leaking an AxiosError.
+      setError(requestError.response?.data?.error || requestError.message || 'Astra could not complete that request.');
+    }
     await load(conversationId);
     setBusy(false);
   };

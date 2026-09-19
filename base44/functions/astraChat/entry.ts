@@ -3,6 +3,8 @@ import { secrets } from 'base44:runtime';
 import { activityLabel, runTool, toolSchemas } from './tools.ts';
 
 const maxIterations = 12;
+// Long engineering specs are normal input here, so the cap is generous.
+const maxPromptChars = 60000;
 
 const systemPrompt = `You are Astra, a senior engineer reviewing GitHub repositories for the app owner.
 Use the GitHub tools to list the repository tree, read the files that matter, and reason about real problems.
@@ -33,7 +35,8 @@ export default async function(req: Request): Promise<Response> {
     const conversationId = String(input.conversationId || '').trim();
     const prompt = String(input.message || '').trim();
     if (!conversationId) return Response.json({ error: 'A conversation id is required.' }, { status: 400 });
-    if (!prompt || prompt.length > 8000) return Response.json({ error: 'Send a message up to 8,000 characters.' }, { status: 400 });
+    if (!prompt) return Response.json({ error: 'Send a message.' }, { status: 400 });
+    if (prompt.length > maxPromptChars) return Response.json({ error: `That message is ${prompt.length.toLocaleString()} characters; Astra accepts up to ${maxPromptChars.toLocaleString()}. Trim it or split it across two messages.` }, { status: 400 });
 
     const apiKey = secrets.get('ASTRA_OPENAI_API_KEY');
     const githubToken = secrets.get('ASTRA_GITHUB_TOKEN');
