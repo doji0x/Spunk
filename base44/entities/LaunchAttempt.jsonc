@@ -28,6 +28,21 @@
       "type": "string",
       "description": "Self-hosted metadata URI written on-chain."
     },
+    "socials": {
+      "type": "object",
+      "description": "Editable off-chain links served by the metadata endpoint.",
+      "properties": {
+        "website": {
+          "type": "string"
+        },
+        "twitter": {
+          "type": "string"
+        },
+        "github": {
+          "type": "string"
+        }
+      }
+    },
     "signature": {
       "type": "string",
       "description": "Latest launch transaction signature."

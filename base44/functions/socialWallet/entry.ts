@@ -1,12 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
-import nacl from 'npm:tweetnacl@1.0.3';
-import bs58 from 'npm:bs58@6.0.0';
-
-function verifySignedMessage(message, signature, walletAddress) {
-  const bytes = new TextEncoder().encode(message);
-  const sig = Uint8Array.from(atob(signature), c => c.charCodeAt(0));
-  return nacl.sign.detached.verify(bytes, sig, bs58.decode(walletAddress));
-}
+import { verifySignedMessage, issueNonce } from '../../shared/walletSignature.ts';
 
 export default async function(req: Request): Promise<Response> {
   try {
@@ -15,7 +8,7 @@ export default async function(req: Request): Promise<Response> {
     if (body.action === 'nonce') {
       const walletAddress = String(body.walletAddress || '');
       if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) return Response.json({ error: 'Invalid wallet address.' }, { status: 400 });
-      const nonce = bs58.encode(crypto.getRandomValues(new Uint8Array(24)));
+      const nonce = issueNonce();
       await base44.asServiceRole.entities.WalletNonce.create({ walletAddress, nonce, used: false });
       return Response.json({ nonce });
     }

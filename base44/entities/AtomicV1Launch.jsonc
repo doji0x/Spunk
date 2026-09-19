@@ -35,6 +35,21 @@
     "metadataUri": {
       "type": "string"
     },
+    "socials": {
+      "type": "object",
+      "description": "Editable off-chain links served by the Atomic V1 metadata endpoint.",
+      "properties": {
+        "website": {
+          "type": "string"
+        },
+        "twitter": {
+          "type": "string"
+        },
+        "github": {
+          "type": "string"
+        }
+      }
+    },
     "transactionSignature": {
       "type": "string"
     },

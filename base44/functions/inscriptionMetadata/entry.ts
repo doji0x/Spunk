@@ -42,9 +42,18 @@ export default async function(req: Request): Promise<Response> {
     const coin = (url.searchParams.get('coin') || '').trim();
     const hasCoin = asset === 'json' && mintPattern.test(coin);
     let launchAttempt = null;
-    if (hasCoin) [launchAttempt] = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ coinMint: coin });
+    if (asset === 'json') {
+      const entities = createClientFromRequest(req).asServiceRole.entities;
+      if (hasCoin) {
+        [launchAttempt] = await entities.PublicLaunchAttempt.filter({ coinMint: coin });
+        if (!launchAttempt) [launchAttempt] = await entities.LaunchAttempt.filter({ coinMint: coin });
+      } else {
+        // Admin launches written before the coin param exists are matched by inscription.
+        [launchAttempt] = await entities.LaunchAttempt.filter({ inscribedMint: mint, status: 'confirmed' });
+      }
+    }
     const storedSocials = launchAttempt?.socials || {};
-    const socials = asset !== 'json' ? {} : hasCoin
+    const socials = asset !== 'json' ? {} : hasCoin || launchAttempt
       ? { website: storedSocials.website || '', twitter: storedSocials.twitter || '', github: storedSocials.github || '' }
       : { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') };
     const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:media-v2`;
