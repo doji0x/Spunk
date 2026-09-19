@@ -1,6 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { Buffer } from 'node:buffer';
 import { processCover } from './cover.ts';
+import { postFirstMint } from '../../shared/firstMintPost.ts';
 
 const maxJobs = 3;
 const chunksPerJob = 6;
@@ -128,7 +129,18 @@ export default async function(req: Request): Promise<Response> {
             log('Cover artwork archived', `${job.coverSize} bytes`);
           }
           log('Mint complete', `mint ${job.mint} · signer ${signer}`);
-          await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', mediaHash: proof.hash, archivedSourceUri, ...(mediaType === 'image' ? { imageHash: proof.hash, archivedImageUri: archivedSourceUri } : {}), events });
+          const completed = await base44.asServiceRole.entities.MintRecord.update(job.id, { ...progress, status: 'success', mediaHash: proof.hash, archivedSourceUri, ...(mediaType === 'image' ? { imageHash: proof.hash, archivedImageUri: archivedSourceUri } : {}), events });
+          // A celebratory post is ancillary: a finished, verified mint must never be marked failed because of it.
+          try {
+            const post = await postFirstMint(base44.asServiceRole.entities, { ...completed, mediaType });
+            if (post) {
+              log('First mint announced', `posted to ${job.destinationWallet}`);
+              await base44.asServiceRole.entities.MintRecord.update(job.id, { events });
+            }
+          } catch (postError) {
+            log('First mint post skipped', postError.message || 'The profile post did not publish.');
+            await base44.asServiceRole.entities.MintRecord.update(job.id, { events });
+          }
           results.push({ id: job.id, mint: job.mint, status: 'success', offset, archivedSourceUri });
         } else results.push({ id: job.id, mint: job.mint, status: 'in_progress', offset });
       } catch (error) {

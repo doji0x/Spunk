@@ -47,6 +47,9 @@ export default async function(req: Request): Promise<Response> {
     const walletAddress = String(input.walletAddress || '').trim();
     if (!addressPattern.test(walletAddress)) return Response.json({ error: 'A valid wallet address is required.' }, { status: 400 });
     const records = await base44.asServiceRole.entities.MintRecord.filter({ destinationWallet: walletAddress }, '-created_date', 10);
+    if (input.action === 'history') {
+      return Response.json({ records: records.map(record => present(record)) });
+    }
     if (input.action === 'retry') {
       const target = records.find(record => record.status === 'failed' && record.imageUri);
       if (!target) return Response.json({ error: 'No paused inscription is available to retry.' }, { status: 404 });
