@@ -21,6 +21,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import PublicLaunch from '@/pages/PublicLaunch';
 import PublicInscribe from '@/pages/PublicInscribe';
+import PublicAtomicV1Launch from '@/pages/PublicAtomicV1Launch';
 import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
 import ProofOfFart from '@/pages/ProofOfFart';
@@ -55,6 +56,7 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Home />} />
       <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/inscribe" element={<PublicInscribe />} />
+      <Route path="/atomic-v1" element={<PublicAtomicV1Launch />} />
       <Route path="/feed" element={<Feed />} />
       <Route path="/profile/:wallet" element={<SocialProfile />} />
       <Route path="/proof-of-fart" element={<ProofOfFart />} />
