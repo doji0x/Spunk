@@ -9,8 +9,9 @@ import { cached, remember, rateLimited } from './guard.ts';
 import { confirmedPrefixLength, expectedImage, partialImage } from './partialImage.ts';
 
 const mintPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-// Inscriptions rarely change; a long shared max-age lets CDNs and marketplaces serve repeats without hitting this function.
-const headers = { 'cache-control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400', 'access-control-allow-origin': '*' };
+// Links stay editable after launch, so the shared window is short: terminals revalidate
+// within a minute, while stale-while-revalidate still absorbs bursts off the paid RPC.
+const headers = { 'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=600', 'access-control-allow-origin': '*' };
 const progressHeaders = { 'cache-control': 'no-store, max-age=0', 'access-control-allow-origin': '*', 'content-type': 'image/png' };
 
 function imageComplete(bytes, mime) {

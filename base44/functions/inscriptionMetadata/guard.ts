@@ -1,6 +1,6 @@
 // In-memory response cache and per-IP rate limit for the public metadata endpoint.
 // Both live for the lifetime of a warm instance, which absorbs marketplace/pump.fun bursts before they reach the paid RPC.
-const cacheTtlMs = 10 * 60 * 1000;
+const cacheTtlMs = 60 * 1000;
 const rateWindowMs = 60 * 1000;
 const rateLimit = 60;
 const cache = new Map();

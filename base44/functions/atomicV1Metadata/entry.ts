@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 
-const headers = { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=3600, s-maxage=86400' };
+const headers = { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=600' };
 export default async function(req: Request): Promise<Response> {
   try {
     const mint = (new URL(req.url).searchParams.get('mint') || '').trim();
