@@ -221,7 +221,10 @@ export default async function(req: Request): Promise<Response> {
     const submitToken = await createSubmitToken(walletBytes, preparedTransaction.message.serialize());
     const record = { requestId: input.requestId, walletAddress, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, quoteMint: input.quoteMint, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, socials, submitToken, signature: '', status: 'prepared', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
     attempt = attempt ? await attempts.update(attempt.id, record) : await attempts.create(record);
-    return Response.json({ ...launchSummary, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight });
+    // Surface our RPC's view of the transaction so a Phantom-side simulation failure
+    // can be compared against it instead of guessed at.
+    const preflight = { ok: !simulation.err, error: simulation.err ? JSON.stringify(simulation.err) : '', unitsConsumed: simulation.unitsConsumed || 0, logs: (simulation.logs || []).slice(-12) };
+    return Response.json({ ...launchSummary, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight, preflight });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }

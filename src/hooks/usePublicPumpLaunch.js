@@ -19,6 +19,7 @@ export default function usePublicPumpLaunch() {
   const [input, setInput] = useState(initial), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [result, setResult] = useState(null);
   const [settings, setSettings] = useState({ pairs: [], holderRewardEnabled: false, creatorFeeConfigurable: false, maxCreatorFeeBps: 0 });
   const [pendingAttempts, setPendingAttempts] = useState([]);
+  const [preflight, setPreflight] = useState(null);
   useEffect(() => {
     let active = true;
     invoke({ action: 'options' }).then(({ data }) => {
@@ -66,6 +67,7 @@ export default function usePublicPumpLaunch() {
   async function prepareSignSubmit(params) {
     for (let round = 0; round < 3; round += 1) {
       const { data } = await invoke({ action: 'prepare', walletAddress: wallet.address, ...params });
+      setPreflight(data.preflight || null);
       if (data.alreadyLaunched) return { data, alreadyLaunched: true };
       const signed = await wallet.provider.signTransaction(phantomTransaction(data.transaction));
       try {
@@ -112,5 +114,5 @@ export default function usePublicPumpLaunch() {
     }
     await run(attemptParams(attempt), attempt.feeRecipients || []);
   }
-  return { wallet, input, setInput, busy, loading, settings, error, result, launch, pendingAttempts, resume };
+  return { wallet, input, setInput, busy, loading, settings, error, result, launch, pendingAttempts, resume, preflight };
 }
