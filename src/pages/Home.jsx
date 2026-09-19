@@ -90,7 +90,7 @@ export default function Home() {
         <button onClick={() => setAbout(true)} className="flex items-center gap-1 hover:text-primary">Metaplex + Solana v1 + LibrePlex <ArrowUpRight size={12} /></button>
       </div>
       <nav aria-label="External links" className="flex items-center gap-4">
-        <a href="https://github.com/doji0x/validate" target="_blank" rel="noreferrer" className="hover:text-primary">Docs</a>
+        <a href="https://github.com/doji0x/Spunk" target="_blank" rel="noreferrer" className="hover:text-primary">Docs</a>
         <a href="https://x.com/humanevolvd?s=11" target="_blank" rel="noreferrer" className="hover:text-primary">X</a>
         <span className="font-mono">SOLANA CYPHER PUNKS</span>
       </nav>
