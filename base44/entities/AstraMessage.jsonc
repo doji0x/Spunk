@@ -18,9 +18,20 @@
     "content": {
       "type": "string"
     },
+    "turn": {
+      "type": "number",
+      "description": "Sequential number of the owner's message in the conversation; Astra cites it as #N."
+    },
     "toolName": {
       "type": "string",
       "description": "GitHub tool Astra used, for activity lines."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Tool arguments and result summary for activity lines."
+    },
+    "durationMs": {
+      "type": "number"
     },
     "repo": {
       "type": "string",

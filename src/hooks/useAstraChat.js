@@ -21,7 +21,7 @@ export default function useAstraChat() {
   const send = async text => {
     setBusy(true);
     setError('');
-    setMessages(current => [...current, { id: `local-${Date.now()}`, role: 'user', content: text }]);
+    setMessages(current => [...current, { id: `local-${Date.now()}`, role: 'user', content: text, turn: current.filter(item => item.role === 'user').length + 1 }]);
     try {
       const response = await base44.functions.invoke('astraChat', { conversationId, message: text });
       if (response.data?.error) setError(response.data.error);
