@@ -10,7 +10,7 @@ const points = [
 
 export default function AtomicV1Hero() {
   return <section className="overflow-hidden rounded-3xl border border-primary/25 bg-card/60 p-6 gold-glow sm:p-8">
-    <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 font-mono text-[10px] tracking-[0.2em] text-primary"><Sparkles className="h-3 w-3" />VERSION 1 · NEW</span>
+    <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 font-mono text-[10px] tracking-[0.2em] text-primary"><Sparkles className="h-3 w-3" />VERSION 1 · COMING SOON</span>
     <h2 className="mt-5 font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">Launch a coin with its image <span className="gold-text">inscribed in the same breath</span>.</h2>
     <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">Pump.fun coins point at images hosted somewhere else. An Atomic V1 launch embeds the image bytes directly in the launch transaction, permanently binding the art to the coin the second it is created.</p>
     <div className="mt-7 grid gap-3 sm:grid-cols-2">
@@ -20,6 +20,6 @@ export default function AtomicV1Hero() {
         <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{point.copy}</p>
       </div>; })}
     </div>
-    <p className="mt-6 text-xs leading-5 text-muted-foreground">The on-chain name, ticker, and image bytes are immutable once the transaction lands — only the standard links can be edited later.</p>
+    <p className="mt-6 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs leading-5 text-muted-foreground"><span className="font-semibold text-primary">Coming soon.</span> Solana version 1 transactions are ahead of what wallets can sign today, so public launches are paused until wallet support catches up.</p>
   </section>;
 }

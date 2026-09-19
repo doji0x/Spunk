@@ -51,7 +51,6 @@ export default function Home() {
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
       <div className="text-left">
         <AtomicV1Hero />
-        <Link to="/atomic-v1" className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Launch an Atomic V1 coin <ArrowUpRight size={14} /></Link>
       </div>
 
       <div className="mt-16"><PunksHero /></div>
