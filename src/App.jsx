@@ -11,6 +11,7 @@ import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
 import AdminMints from '@/pages/AdminMints';
 import AdminAstra from '@/pages/AdminAstra';
+import AdminAtomicV1Launch from '@/pages/AdminAtomicV1Launch';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
@@ -67,6 +68,9 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fastra" replace />} />}>
         <Route path="/admin/astra" element={<AdminAstra />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fatomic-v1" replace />} />}>
+        <Route path="/admin/atomic-v1" element={<AdminAtomicV1Launch />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

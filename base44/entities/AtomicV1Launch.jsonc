@@ -1,0 +1,114 @@
+{
+  "name": "AtomicV1Launch",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "coinMint": {
+      "type": "string"
+    },
+    "bondingCurve": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "imageUrl": {
+      "type": "string"
+    },
+    "imageMime": {
+      "type": "string"
+    },
+    "imageByteLength": {
+      "type": "number"
+    },
+    "imageSha256": {
+      "type": "string"
+    },
+    "metadataUri": {
+      "type": "string"
+    },
+    "transactionSignature": {
+      "type": "string"
+    },
+    "transactionVersion": {
+      "type": "number",
+      "default": 1
+    },
+    "serializedTransactionBytes": {
+      "type": "number"
+    },
+    "commitment": {
+      "type": "string",
+      "default": "VALIDATE-v1"
+    },
+    "atomicV1Verified": {
+      "type": "boolean",
+      "default": false
+    },
+    "firstBuyAmount": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "pending",
+        "confirmed",
+        "failed",
+        "incomplete"
+      ],
+      "default": "prepared"
+    },
+    "error": {
+      "type": "string"
+    },
+    "lastValidBlockHeight": {
+      "type": "number"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "requestId",
+    "coinMint",
+    "name",
+    "symbol",
+    "imageUrl",
+    "imageMime",
+    "imageByteLength",
+    "imageSha256",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
