@@ -1,5 +1,6 @@
 import { activityLabel, runTool, toolSchemas } from './tools.ts';
 import { summarizeToolArgs, summarizeToolResult } from './memory.ts';
+import { callOpenAi } from '../../shared/astraOpenAi.ts';
 
 // The manager delegates to these specialists. `writes` decides whether the worker
 // may commit; reviewers stay read-only so only builders touch the branch.
@@ -38,18 +39,7 @@ export const crewRoles = {
 
 export const crewOrder = ['architect', 'logic', 'functions', 'integration', 'documentation', 'audit'];
 
-const maxWorkerSteps = 8;
-
-async function callOpenAi(apiKey, model, messages, tools) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, tools, tool_choice: 'auto' })
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message || `OpenAI ${response.status}`);
-  return body.choices[0].message;
-}
+const maxWorkerSteps = 5;
 
 // Runs one specialist as its own short agent loop and returns the report the manager reads.
 export async function runSpecialist({ apiKey, model, githubToken, role, job, context, log }) {
@@ -64,7 +54,7 @@ Finish with a tight report for the manager: what you found or changed, the files
 
   const messages = [{ role: 'system', content: system }, { role: 'user', content: `JOB: ${job}\n\nCONTEXT FROM MANAGER:\n${context || 'none'}` }];
   for (let step = 0; step < maxWorkerSteps; step++) {
-    const message = await callOpenAi(apiKey, model, messages, tools);
+    const message = await callOpenAi({ apiKey, model, messages, tools });
     messages.push(message);
     const calls = message.tool_calls || [];
     if (!calls.length) return message.content || 'No report.';

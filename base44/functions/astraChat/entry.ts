@@ -3,6 +3,7 @@ import { secrets } from 'base44:runtime';
 import { activityLabel, runTool, toolSchemas } from './tools.ts';
 import { buildActivityDigest, buildHistory, nextTurn, summarizeToolArgs, summarizeToolResult } from './memory.ts';
 import { crewOrder, crewRoles, runSpecialist } from './crew.ts';
+import { callOpenAi, resolveModel } from '../../shared/astraOpenAi.ts';
 
 // The manager surveys and delegates; specialists do the writing, so it keeps read tools plus assignJob.
 const managerTools = [
@@ -25,7 +26,7 @@ const managerTools = [
   }
 ];
 
-const maxIterations = 12;
+const maxIterations = 8;
 // Long engineering specs are normal input here, so the cap is generous.
 const maxPromptChars = 60000;
 
@@ -40,17 +41,6 @@ All work goes to one dedicated test branch, never the default branch: pick astra
 Reply with a short markdown brief: what each specialist did, the files and branch touched, audit findings with severity (high/medium/low), and the branch the owner should review and merge.
 Memory: every message from the owner is numbered [#N]. Whenever you rely on a fact, requirement, snippet, or decision the owner gave you earlier, cite it inline as (#N) — for example "per the spec you shared (#2)". Quote the owner's exact words when precision matters. Never attribute something to the owner that does not appear in a numbered message.
 You also receive a digest of your earlier tool activity; use it to avoid re-reading unchanged files and to remember which branch and files you already committed.`;
-
-async function callOpenAi(apiKey, model, messages) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, tools: managerTools, tool_choice: 'auto' })
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message || `OpenAI ${response.status}`);
-  return body.choices[0].message;
-}
 
 export default async function(req: Request): Promise<Response> {
   let logBreak = null;
@@ -73,9 +63,7 @@ export default async function(req: Request): Promise<Response> {
 
     const apiKey = secrets.get('ASTRA_OPENAI_API_KEY');
     const githubToken = secrets.get('ASTRA_GITHUB_TOKEN');
-    const configuredModel = (secrets.get('ASTRA_OPENAI_MODEL') || '').trim();
-    // Only accept real OpenAI model ids; a friendly label like "Astra" falls back to the default.
-    const model = /^(gpt|o1|o3|o4|chatgpt)/i.test(configuredModel) ? configuredModel : 'gpt-4o';
+    const model = resolveModel(secrets.get('ASTRA_OPENAI_MODEL'));
     if (!apiKey || !githubToken) return Response.json({ error: 'Astra is missing its OpenAI or GitHub credentials.' }, { status: 503 });
 
     const stored = await base44.entities.AstraMessage.filter({ conversationId }, 'created_date', 200);
@@ -101,7 +89,7 @@ export default async function(req: Request): Promise<Response> {
     };
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const message = await callOpenAi(apiKey, model, messages);
+      const message = await callOpenAi({ apiKey, model, messages, tools: managerTools });
       messages.push(message);
       const calls = message.tool_calls || [];
       if (!calls.length) { finalText = message.content || 'No response.'; break; }
