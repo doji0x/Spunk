@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, History, Plus, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, History, MessagesSquare, Plus, Sparkles, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import AstraMessageList from '@/components/astra/AstraMessageList';
@@ -20,6 +20,7 @@ export default function AdminAstra() {
       <div className="mx-auto flex h-14 max-w-3xl items-center gap-2 px-2">
         <Link to="/" aria-label="Close Astra" className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-card"><X className="h-5 w-5" /></Link>
         <div className="flex-1"><p className="font-mono text-[10px] leading-none tracking-[0.3em] text-primary">ADMIN · ASTRA</p><h1 className="font-display font-semibold leading-tight">Repository agent</h1></div>
+        <Link to="/admin/astra/history"><Button variant="outline" size="sm" className="gap-1.5"><MessagesSquare size={14} />Chats</Button></Link>
         <Link to="/admin/astra/jobs"><Button variant="outline" size="sm" className="gap-1.5"><History size={14} />Jobs</Button></Link>
         <Button variant="outline" size="sm" onClick={chat.reset} className="gap-1.5"><Plus size={14} />New</Button>
       </div>

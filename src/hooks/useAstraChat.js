@@ -4,7 +4,8 @@ import { base44 } from '@/api/base44Client';
 const storageKey = 'astra-conversation-id';
 
 export default function useAstraChat() {
-  const [conversationId, setConversationId] = useState(() => localStorage.getItem(storageKey) || crypto.randomUUID());
+  // A ?conversation= link from the history page reopens that exact thread, so Astra regains its full memory of it.
+  const [conversationId, setConversationId] = useState(() => new URLSearchParams(window.location.search).get('conversation') || localStorage.getItem(storageKey) || crypto.randomUUID());
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
