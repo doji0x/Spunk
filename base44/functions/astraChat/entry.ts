@@ -30,6 +30,7 @@ async function callOpenAi(apiKey, model, messages) {
 }
 
 export default async function(req: Request): Promise<Response> {
+  let logBreak = null;
   try {
     if (req.method !== 'POST') return Response.json({ error: 'Use POST.' }, { status: 405 });
     const base44 = createClientFromRequest(req);
@@ -42,6 +43,10 @@ export default async function(req: Request): Promise<Response> {
     if (!conversationId) return Response.json({ error: 'A conversation id is required.' }, { status: 400 });
     if (!prompt) return Response.json({ error: 'Send a message.' }, { status: 400 });
     if (prompt.length > maxPromptChars) return Response.json({ error: `That message is ${prompt.length.toLocaleString()} characters; Astra accepts up to ${maxPromptChars.toLocaleString()}. Trim it or split it across two messages.` }, { status: 400 });
+
+    logBreak = async text => {
+      await base44.entities.AstraMessage.create({ conversationId, role: 'activity', content: `Run stopped — ${text}`, toolName: 'run', repo: input.repo || undefined }).catch(() => {});
+    };
 
     const apiKey = secrets.get('ASTRA_OPENAI_API_KEY');
     const githubToken = secrets.get('ASTRA_GITHUB_TOKEN');
@@ -61,6 +66,16 @@ export default async function(req: Request): Promise<Response> {
     messages.push(...history, { role: 'user', content: `[#${turn}] ${prompt}` });
     const activity = [];
     let finalText = '';
+    // Each step is written as it happens, so a crash or timeout still leaves the trail
+    // Astra reads back as memory on the next message.
+    const logActivity = async item => {
+      activity.push(item);
+      await base44.entities.AstraMessage.create({
+        conversationId, role: 'activity',
+        content: item.failed ? `${item.label} — failed: ${item.error}` : item.label,
+        toolName: item.toolName, detail: item.detail, durationMs: item.durationMs, repo: input.repo || undefined
+      }).catch(() => {});
+    };
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       const message = await callOpenAi(apiKey, model, messages);
@@ -78,19 +93,19 @@ export default async function(req: Request): Promise<Response> {
         const durationMs = Date.now() - startedAt;
         const detail = `${summarizeToolArgs(args)} → ${summarizeToolResult(result)}`;
         console.log(`[astra][${conversationId}] ${call.function.name} ${detail} in ${durationMs}ms`);
-        activity.push({ label, toolName: call.function.name, failed: !!result.error, detail, durationMs, error: result.error || '' });
+        await logActivity({ label, toolName: call.function.name, failed: !!result.error, detail, durationMs, error: result.error || '' });
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 80000) });
       }
       if (iteration === maxIterations - 1) finalText = 'I stopped after reaching the maximum number of steps for one message. Ask me to continue and I will pick up from here.';
     }
 
-    const saved = [];
-    for (const item of activity) saved.push({ conversationId, role: 'activity', content: item.failed ? `${item.label} — failed: ${item.error}` : item.label, toolName: item.toolName, detail: item.detail, durationMs: item.durationMs, repo: input.repo || undefined });
-    saved.push({ conversationId, role: 'assistant', content: finalText, repo: input.repo || undefined });
-    await base44.entities.AstraMessage.bulkCreate(saved);
+    await base44.entities.AstraMessage.create({ conversationId, role: 'assistant', content: finalText, repo: input.repo || undefined });
 
     return Response.json({ reply: finalText, activity }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    return Response.json({ error: error.message || 'Astra could not complete that request.' }, { status: 500 });
+    // Record the break in the conversation itself so the next message shows where it stopped.
+    const message = error.message || 'Astra could not complete that request.';
+    if (logBreak) await logBreak(message);
+    return Response.json({ error: message }, { status: 500 });
   }
 }
