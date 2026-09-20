@@ -89,11 +89,14 @@ export default async function(req: Request): Promise<Response> {
     };
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const message = await callOpenAi({ apiKey, model, messages, tools: managerTools });
-      messages.push(message);
+      const message = await callOpenAi({ apiKey, model, messages, tools: managerTools, parallelToolCalls: true });
       const calls = message.tool_calls || [];
-      if (!calls.length) { finalText = message.content || 'No response.'; break; }
-      for (const call of calls) {
+      if (!calls.length) { messages.push(message); finalText = message.content || 'No response.'; break; }
+      // Exactly one specialist runs per iteration, so the foreman reads each report before
+      // assigning the next job. Extra calls are dropped rather than fanned out in parallel.
+      const call = calls[0];
+      messages.push({ ...message, tool_calls: [call] });
+      {
         let args = {};
         try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
         const delegating = call.function.name === 'assignJob';

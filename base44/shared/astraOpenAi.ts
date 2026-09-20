@@ -10,12 +10,14 @@ export function resolveModel(configured) {
   return model || 'gpt-4o';
 }
 
-export async function callOpenAi({ apiKey, model, messages, tools }) {
+// parallelToolCalls: true asks OpenAI to return at most one tool call per turn, so the
+// manager delegates to a single specialist and reads its report before choosing the next.
+export async function callOpenAi({ apiKey, model, messages, tools, parallelToolCalls }) {
   for (let attempt = 0; ; attempt++) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, messages, tools, tool_choice: 'auto' })
+      body: JSON.stringify({ model, messages, tools, tool_choice: 'auto', ...(parallelToolCalls ? { parallel_tool_calls: false } : {}) })
     });
     if (response.ok) return (await response.json()).choices[0].message;
 
