@@ -2,19 +2,42 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
 import { secrets } from 'base44:runtime';
 import { activityLabel, runTool, toolSchemas } from './tools.ts';
 import { buildActivityDigest, buildHistory, nextTurn, summarizeToolArgs, summarizeToolResult } from './memory.ts';
+import { crewOrder, crewRoles, runSpecialist } from './crew.ts';
+
+// The manager surveys and delegates; specialists do the writing, so it keeps read tools plus assignJob.
+const managerTools = [
+  ...toolSchemas.filter(tool => tool.function.name !== 'commitFile'),
+  {
+    type: 'function',
+    function: {
+      name: 'assignJob',
+      description: 'Assign one scoped job to a crew specialist and get their report back.',
+      parameters: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', enum: crewOrder, description: 'Which specialist takes the job.' },
+          job: { type: 'string', description: 'The single, specific job for this specialist, including repo, branch and files.' },
+          context: { type: 'string', description: 'Everything the specialist needs: the owner\u2019s requirement and the reports of earlier specialists.' }
+        },
+        required: ['role', 'job']
+      }
+    }
+  }
+];
 
 const maxIterations = 12;
 // Long engineering specs are normal input here, so the cap is generous.
 const maxPromptChars = 60000;
 
-const systemPrompt = `You are Astra, a senior engineer reviewing GitHub repositories for the app owner.
-Use the GitHub tools to list the repository tree, read the files that matter, and reason about real problems.
-When you flag issues, report each one as: file path, severity (high/medium/low), the problem, and the fix.
-All of your commits go to a dedicated test branch, never the repository's default branch.
-Pick one branch for the whole task, named astra/<short-feature-slug> (for example astra/atomic-v1-launch), call createBranch once with it, then pass that exact same branch to every commitFile call. If the branch already exists, keep using it. Only use a different branch if the owner names one.
-Write the complete new file contents on every commit, and always report the branch name and the URL returned by commitFile so the owner can review and merge it.
-Read the current file with readFile immediately before rewriting it and preserve every part you are not deliberately changing.
-Read files before rewriting them; never invent file contents. Keep replies concise and use markdown.
+const systemPrompt = `You are Astra, the PROTOCOL MANAGER / FOREMAN of an engineering crew working on the owner's GitHub repositories.
+You do not write code yourself. You survey with listRepoTree and readFile, break the owner's request into scoped jobs, and delegate each job with assignJob. Only specialists commit.
+Your crew and the order of the pipeline:
+${crewOrder.map(role => `- ${role}: ${crewRoles[role].title} — ${crewRoles[role].brief}`).join('\n')}
+Pipeline: ARCHITECT plans first. Then LOGIC / MATH, FUNCTIONS (in whatever combination the job needs) build against that plan. Then INTEGRATION wires their work together. Then DOCUMENTATION and AUDIT / SECURITY. The audit report comes back to you: if it raises a high or medium finding, assign the fix to the right builder and re-run AUDIT before you reply.
+Skip a specialist only when the job genuinely has nothing for them, and say so in your reply.
+Every assignJob context must carry the owner's requirement plus the reports of the earlier specialists — workers share no memory with each other.
+All work goes to one dedicated test branch, never the default branch: pick astra/<short-feature-slug>, call createBranch once, and name that exact branch in every job you assign. If it already exists, keep using it. Only use another branch if the owner names one.
+Reply with a short markdown brief: what each specialist did, the files and branch touched, audit findings with severity (high/medium/low), and the branch the owner should review and merge.
 Memory: every message from the owner is numbered [#N]. Whenever you rely on a fact, requirement, snippet, or decision the owner gave you earlier, cite it inline as (#N) — for example "per the spec you shared (#2)". Quote the owner's exact words when precision matters. Never attribute something to the owner that does not appear in a numbered message.
 You also receive a digest of your earlier tool activity; use it to avoid re-reading unchanged files and to remember which branch and files you already committed.`;
 
@@ -22,7 +45,7 @@ async function callOpenAi(apiKey, model, messages) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, tools: toolSchemas, tool_choice: 'auto' })
+    body: JSON.stringify({ model, messages, tools: managerTools, tool_choice: 'auto' })
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || `OpenAI ${response.status}`);
@@ -85,13 +108,22 @@ export default async function(req: Request): Promise<Response> {
       for (const call of calls) {
         let args = {};
         try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
-        const label = activityLabel(call.function.name, args);
+        const delegating = call.function.name === 'assignJob';
+        const label = delegating
+          ? `Assigning to ${crewRoles[args.role]?.title || args.role}: ${String(args.job || '').slice(0, 80)}`
+          : activityLabel(call.function.name, args);
         const startedAt = Date.now();
         let result;
-        try { result = await runTool(githubToken, call.function.name, args); }
+        try {
+          result = delegating
+            ? { role: args.role, report: await runSpecialist({ apiKey, model, githubToken, role: args.role, job: String(args.job || ''), context: String(args.context || ''), log: logActivity }) }
+            : await runTool(githubToken, call.function.name, args);
+        }
         catch (error) { result = { error: error.message }; }
         const durationMs = Date.now() - startedAt;
-        const detail = `${summarizeToolArgs(args)} → ${summarizeToolResult(result)}`;
+        const detail = delegating
+          ? `${String(args.job || '').slice(0, 300)} → ${String(result.report || result.error || '').slice(0, 600)}`
+          : `${summarizeToolArgs(args)} → ${summarizeToolResult(result)}`;
         console.log(`[astra][${conversationId}] ${call.function.name} ${detail} in ${durationMs}ms`);
         await logActivity({ label, toolName: call.function.name, failed: !!result.error, detail, durationMs, error: result.error || '' });
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 80000) });
