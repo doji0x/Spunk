@@ -11,6 +11,7 @@ import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
 import AdminMints from '@/pages/AdminMints';
 import AdminAstra from '@/pages/AdminAstra';
+import AdminAstraJobs from '@/pages/AdminAstraJobs';
 import AdminAtomicV1Launch from '@/pages/AdminAtomicV1Launch';
 import AdminLaunchLinks from '@/pages/AdminLaunchLinks';
 import AdminMetadataOverride from '@/pages/AdminMetadataOverride';
@@ -74,6 +75,9 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fastra" replace />} />}>
         <Route path="/admin/astra" element={<AdminAstra />} />
+      </Route>
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fastra%2Fjobs" replace />} />}>
+        <Route path="/admin/astra/jobs" element={<AdminAstraJobs />} />
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fatomic-v1" replace />} />}>
         <Route path="/admin/atomic-v1" element={<AdminAtomicV1Launch />} />
