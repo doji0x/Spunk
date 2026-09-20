@@ -62,6 +62,8 @@ export default function useAstraChat() {
   };
 
   const reset = () => setConversationId(crypto.randomUUID());
+  // Reopening a past thread swaps the active conversation so Astra regains its memory of it.
+  const open = id => setConversationId(id);
 
-  return { messages, busy, error, send, reset, conversationId, pause, editMessage, deleteMessage };
+  return { messages, busy, error, send, reset, open, conversationId, pause, editMessage, deleteMessage };
 }
