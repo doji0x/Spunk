@@ -29,8 +29,8 @@ export default function AdminAstra() {
         <div><h2 className="font-display text-2xl font-bold tracking-tight">Astra</h2><p className="mt-1.5 text-sm leading-6 text-muted-foreground">Reviews a GitHub repository with your own OpenAI key, flags what it finds, and builds fixes on a separate <span className="font-mono text-primary">astra/*</span> test branch you can review and merge.</p></div>
       </div>
       {chat.error && <div className="mb-4 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{chat.error}</div>}
-      <div className="flex-1 pb-4"><AstraMessageList messages={chat.messages} busy={chat.busy} /></div>
-      <AstraComposer onSend={chat.send} busy={chat.busy} />
+      <div className="flex-1 pb-4"><AstraMessageList messages={chat.messages} busy={chat.busy} onEdit={chat.editMessage} onDelete={chat.deleteMessage} /></div>
+      <AstraComposer onSend={chat.send} busy={chat.busy} onPause={chat.pause} />
     </main>
   </div>;
 }
