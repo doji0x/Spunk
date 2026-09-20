@@ -17,7 +17,11 @@ export async function callOpenAi({ apiKey, model, messages, tools, parallelToolC
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, messages, tools, tool_choice: 'auto', ...(parallelToolCalls ? { parallel_tool_calls: false } : {}) })
+      body: JSON.stringify({
+        model, messages,
+        // Reviewer specialists run without any tools, so the tool fields are omitted entirely.
+        ...(tools?.length ? { tools, tool_choice: 'auto', ...(parallelToolCalls ? { parallel_tool_calls: false } : {}) } : {})
+      })
     });
     if (response.ok) return (await response.json()).choices[0].message;
 

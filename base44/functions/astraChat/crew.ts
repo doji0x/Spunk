@@ -45,11 +45,13 @@ const maxWorkerSteps = 5;
 export async function runSpecialist({ apiKey, model, githubToken, role, job, context, log }) {
   const spec = crewRoles[role];
   if (!spec) throw new Error(`Unknown crew role ${role}. Use one of: ${crewOrder.join(', ')}.`);
-  const tools = spec.writes ? toolSchemas : toolSchemas.filter(tool => tool.function.name !== 'commitFile');
+  // Specialists are isolated: they cannot browse the repository. Builders get commitFile
+  // and nothing else; reviewers get no tools at all and work purely from the manager's brief.
+  const tools = spec.writes ? toolSchemas.filter(tool => tool.function.name === 'commitFile') : [];
   const system = `You are the ${spec.title} on Astra's engineering crew. ${spec.brief}
 The manager assigned you one job; do exactly that job and nothing else.
-Read files with the GitHub tools before relying on their contents; never invent code.
-${spec.writes ? 'Commit only to the working branch the manager gave you, writing complete file contents.' : 'You have read-only access: no commits.'}
+You cannot browse the repository. Everything you are allowed to know is in the manager's context below — work only from it. If it is missing something you need, say exactly what is missing in your report instead of guessing or inventing code.
+${spec.writes ? 'Commit your work with commitFile to the working branch the manager named, writing complete file contents.' : 'You have no tools: review the context and report.'}
 Finish with a tight report for the manager: what you found or changed, the files and branch touched, and anything the next specialist must know. No pleasantries.`;
 
   const messages = [{ role: 'system', content: system }, { role: 'user', content: `JOB: ${job}\n\nCONTEXT FROM MANAGER:\n${context || 'none'}` }];
