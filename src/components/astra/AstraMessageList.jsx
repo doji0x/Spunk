@@ -19,7 +19,7 @@ export default function AstraMessageList({ messages, busy }) {
         </div>
       </div>;
     })}
-    {busy && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 size={15} className="animate-spin text-primary" />Astra is working…</div>}
+    {busy && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 size={15} className="animate-spin text-primary" />{[...messages].reverse().find(item => item.role === 'activity')?.content || 'Astra is working…'}</div>}
     <div ref={endRef} />
   </div>;
 }

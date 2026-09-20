@@ -16,6 +16,13 @@ export default function useAstraChat() {
     setMessages(stored);
   }, []);
 
+  // Astra writes each tool step as it runs, so polling while busy streams progress into the chat.
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => { load(conversationId); }, 2000);
+    return () => clearInterval(timer);
+  }, [busy, conversationId, load]);
+
   useEffect(() => { load(conversationId); }, [conversationId, load]);
 
   const send = async text => {
