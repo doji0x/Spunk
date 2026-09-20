@@ -31,11 +31,13 @@ export default function AdminAstra() {
     </header>
     <main className="mx-auto max-w-3xl px-4 pb-16 pt-6 sm:px-6">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="w-full">
-          <TabsTrigger value="chat" className="flex-1 gap-1.5"><Sparkles size={14} />Chat</TabsTrigger>
-          <TabsTrigger value="conversations" className="flex-1 gap-1.5"><MessagesSquare size={14} />Chats</TabsTrigger>
-          <TabsTrigger value="jobs" className="flex-1 gap-1.5"><History size={14} />Jobs</TabsTrigger>
-        </TabsList>
+        <div className="sticky top-14 z-30 -mx-4 border-b border-border/60 bg-background/90 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6">
+          <TabsList className="w-full">
+            <TabsTrigger value="chat" className="flex-1 gap-1.5"><Sparkles size={14} />Chat</TabsTrigger>
+            <TabsTrigger value="conversations" className="flex-1 gap-1.5"><MessagesSquare size={14} />Chats</TabsTrigger>
+            <TabsTrigger value="jobs" className="flex-1 gap-1.5"><History size={14} />Jobs</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="chat" className="mt-6"><AstraChatPanel chat={chat} /></TabsContent>
         <TabsContent value="conversations" className="mt-6"><AstraConversationsPanel activeId={chat.conversationId} onOpen={openConversation} /></TabsContent>
         <TabsContent value="jobs" className="mt-6"><AstraJobsPanel /></TabsContent>
