@@ -42,7 +42,7 @@ export const crewOrder = ['architect', 'logic', 'functions', 'integration', 'doc
 const maxWorkerSteps = 5;
 
 // Runs one specialist as its own short agent loop and returns the report the manager reads.
-export async function runSpecialist({ apiKey, model, githubToken, role, job, context, log }) {
+export async function runSpecialist({ apiKey, model, githubToken, role, job, context, log, beforeWrite }) {
   const spec = crewRoles[role];
   if (!spec) throw new Error(`Unknown crew role ${role}. Use one of: ${crewOrder.join(', ')}.`);
   // Specialists are isolated: they cannot browse the repository. Builders get commitFile
@@ -65,7 +65,11 @@ Finish with a tight report for the manager: what you found or changed, the files
       try { args = JSON.parse(call.function.arguments || '{}'); } catch { args = {}; }
       const startedAt = Date.now();
       let result;
-      try { result = await runTool(githubToken, call.function.name, args); }
+      try {
+        if (!tools.some(tool => tool.function.name === call.function.name)) throw new Error('This tool is not available to this specialist.');
+        await beforeWrite(args);
+        result = await runTool(githubToken, call.function.name, args);
+      }
       catch (error) { result = { error: error.message }; }
       const detail = `${summarizeToolArgs(args)} → ${summarizeToolResult(result)}`;
       await log({
@@ -76,5 +80,5 @@ Finish with a tight report for the manager: what you found or changed, the files
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 60000) });
     }
   }
-  return 'I hit my step limit before finishing this job. Re-assign it with a narrower scope.';
+  throw new Error('The specialist reached its step limit before finishing. No completed fix can be confirmed.');
 }

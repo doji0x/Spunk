@@ -5,6 +5,8 @@ import { buildActivityDigest, buildHistory, nextTurn, summarizeToolArgs, summari
 import { crewOrder, crewRoles, runSpecialist } from './crew.ts';
 import { createPipeline } from './pipeline.ts';
 import { callOpenAi, resolveModel } from '../../shared/astraOpenAi.ts';
+import { createAuditSession } from './auditSession.ts';
+import { auditReview } from './auditReview.ts';
 
 // The manager surveys and delegates; specialists do the writing, so it keeps read tools plus assignJob.
 const managerTools = [
@@ -35,9 +37,12 @@ const managerTools = [
         properties: {
           severity: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Severity reported by the audit specialist.' },
           finding: { type: 'string', description: 'What is wrong, and where (file and branch).' },
-          proposedFix: { type: 'string', description: 'The fix you propose for the owner to approve. Do not apply it.' }
+          proposedFix: { type: 'string', description: 'The fix you propose for the owner to approve. Do not apply it.' },
+          repo: { type: 'string', description: 'Exact owner/repo for this finding.' },
+          branch: { type: 'string', description: 'The astra/* test branch for the fix.' },
+          filePaths: { type: 'array', items: { type: 'string' }, description: 'Exact repository-relative files this fix is allowed to change.' }
         },
-        required: ['severity', 'finding', 'proposedFix']
+        required: ['severity', 'finding', 'proposedFix', 'repo', 'branch', 'filePaths']
       }
     }
   }
@@ -63,7 +68,7 @@ THE PIPELINE IS FIXED AND STRICTLY SEQUENTIAL: ${crewOrder.join(' → ')}.
 
 SPECIALISTS ARE BLIND. They cannot read the repository — no file access at all. Everything they know comes from the context you pass. So before you assign a job you must readFile every file that specialist needs and paste the full relevant contents into the context, along with the owner's requirement and the reports of the earlier specialists. An under-briefed specialist is your mistake, not theirs.
 
-AUDIT FINDINGS ARE NEVER AUTO-FIXED. When the audit report contains a high or medium finding, call recordAuditIssue once per finding (severity, the finding, and the fix you propose), then stop delegating and reply to the owner with the findings and a clear proposed fix plan for them to approve. Only after the owner approves in a later message do you run the specialists needed to apply that approved fix, then re-run AUDIT once.
+AUDIT FINDINGS ARE NEVER AUTO-FIXED. Audit findings are automatically saved as pending approval cards. If you discover another finding, call recordAuditIssue with severity, finding, proposedFix, repo, astra/* branch and filePaths. Stop delegating after findings. Only a server-provided OWNER BUTTON DECISION grants permission to fix that exact plan; conversational approval does not bypass the gate. After the approved fix, re-run AUDIT once. Never repeat a finding already recorded automatically.
 
 All work goes to one dedicated test branch, never the default branch: pick astra/<short-feature-slug>, call createBranch once, and name that exact branch in every job you assign. If it already exists, keep using it. Only use another branch if the owner names one.
 Reply with a short markdown brief: what each specialist did in order, any roles skipped and why, the files and branch touched, the audit verdict with severities, and the branch the owner should review and merge.
@@ -72,6 +77,7 @@ You also receive a digest of your earlier tool activity; use it to avoid re-read
 
 export default async function(req: Request): Promise<Response> {
   let logBreak = null;
+  let auditSession = null;
   try {
     if (req.method !== 'POST') return Response.json({ error: 'Use POST.' }, { status: 405 });
     const base44 = createClientFromRequest(req);
@@ -80,7 +86,8 @@ export default async function(req: Request): Promise<Response> {
 
     const input = await req.json().catch(() => ({}));
     const conversationId = String(input.conversationId || '').trim();
-    const prompt = String(input.message || '').trim();
+    const prompt = input.decision ? `Audit decision: ${input.decision} for plan ${input.issueId}.` : String(input.message || '').trim();
+    if (input.decision && (!['approve', 'reject', 'retry'].includes(input.decision) || typeof input.issueId !== 'string' || !input.issueId)) return Response.json({ error: 'Choose approve or reject for an audit issue.' }, { status: 400 });
     if (!conversationId) return Response.json({ error: 'A conversation id is required.' }, { status: 400 });
     if (!prompt) return Response.json({ error: 'Send a message.' }, { status: 400 });
     if (prompt.length > maxPromptChars) return Response.json({ error: `That message is ${prompt.length.toLocaleString()} characters; Astra accepts up to ${maxPromptChars.toLocaleString()}. Trim it or split it across two messages.` }, { status: 400 });
@@ -90,24 +97,35 @@ export default async function(req: Request): Promise<Response> {
     };
 
     const apiKey = secrets.get('ASTRA_OPENAI_API_KEY');
-    const githubToken = secrets.get('ASTRA_GITHUB_TOKEN');
     const model = resolveModel(secrets.get('ASTRA_OPENAI_MODEL'));
-    if (!apiKey || !githubToken) return Response.json({ error: 'Astra is missing its OpenAI or GitHub credentials.' }, { status: 503 });
+    if (!apiKey) return Response.json({ error: 'Astra is missing its OpenAI credentials.' }, { status: 503 });
+    const { accessToken: githubToken } = await base44.asServiceRole.connectors.getConnection('github');
+    auditSession = await createAuditSession(base44, { ...input, conversationId }, user);
 
-    const stored = await base44.entities.AstraMessage.filter({ conversationId }, 'created_date', 200);
+    const stored = (await base44.entities.AstraMessage.filter({ conversationId }, '-created_date', 300)).reverse();
     const history = buildHistory(stored);
     const digest = buildActivityDigest(stored);
     const turn = nextTurn(stored);
     await base44.entities.AstraMessage.create({ conversationId, role: 'user', content: prompt, turn, repo: input.repo || undefined });
 
+    if (auditSession.decision?.status === 'rejected') {
+      const reply = await auditSession.revise(apiKey, model);
+      const saved = await base44.entities.AstraMessage.create({ conversationId, role: 'assistant', content: reply });
+      await auditSession.finish(saved.id, false, false);
+      return Response.json({ reply, activity: [] }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const messages = [{ role: 'system', content: systemPrompt }];
+    if (auditSession.directive) messages.push({ role: 'system', content: auditSession.directive });
     if (digest) messages.push({ role: 'system', content: digest });
     messages.push(...history, { role: 'user', content: `[#${turn}] ${prompt}` });
     const activity = [];
     let finalText = '';
+    let executionFailed = false;
+    let auditPassed = false;
     // Each step is written as it happens, so a crash or timeout still leaves the trail
     // Astra reads back as memory on the next message.
     const logActivity = async item => {
+      if (item.failed) executionFailed = true;
       activity.push(item);
       await base44.entities.AstraMessage.create({
         conversationId, role: 'activity',
@@ -120,12 +138,15 @@ export default async function(req: Request): Promise<Response> {
     let auditNudged = false;
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      const message = await callOpenAi({ apiKey, model, messages, tools: managerTools, parallelToolCalls: true });
+      const tools = auditSession.blocked || pipeline.issues
+        ? managerTools.filter(tool => ['listRepoTree', 'readFile', 'recordAuditIssue'].includes(tool.function.name))
+        : managerTools;
+      const message = await callOpenAi({ apiKey, model, messages, tools });
       const calls = message.tool_calls || [];
       if (!calls.length) {
         messages.push(message);
         // The manager may not finish a run of real work without the audit gate.
-        if (pipeline.started && !pipeline.auditDone && !pipeline.issues && !auditNudged) {
+        if ((pipeline.started || auditSession.decision?.status === 'approved') && !pipeline.auditDone && !pipeline.issues && !auditNudged && !auditSession.blocked) {
           auditNudged = true;
           messages.push({ role: 'user', content: 'AUDIT / SECURITY has not run yet and it is never skipped. Assign the audit job now, with the full context of what the crew changed, before you write your brief.' });
           continue;
@@ -150,6 +171,7 @@ export default async function(req: Request): Promise<Response> {
         const startedAt = Date.now();
         let result;
         try {
+          if (!tools.some(tool => tool.function.name === call.function.name)) throw new Error('This action is blocked by the audit approval gate.');
           if (delegating) {
             // The pipeline decides whether this role may run now; a violation comes back to
             // the manager as the tool result instead of running the specialist.
@@ -157,17 +179,28 @@ export default async function(req: Request): Promise<Response> {
             if (claim.error) result = { error: claim.error };
             else {
               for (const role of claim.skipped) await logActivity({ label: `Skipped ${crewRoles[role].title}`, toolName: 'assignJob', detail: `Manager skipped ${role} in the pipeline.`, durationMs: 0 });
-              result = {
-                role: args.role,
-                skipped: claim.skipped,
-                report: await runSpecialist({ apiKey, model, githubToken, role: args.role, job: String(args.job || ''), context: String(args.context || ''), log: logActivity }),
-                next: pipeline.nextRole ? `Read this report. If the job is complete, the next pipeline role is ${pipeline.nextRole}.` : 'The pipeline is finished.'
-              };
+              const context = `${auditSession.directive}\n\n${String(args.context || '')}`;
+              let report;
+              if (args.role === 'audit') {
+                const review = await auditReview({ apiKey, model, job: String(args.job || ''), context });
+                for (const finding of review.findings) {
+                  await auditSession.record(finding);
+                  pipeline.recordIssue();
+                }
+                pipeline.completeAudit();
+                auditPassed = review.findings.length === 0;
+                report = `${JSON.stringify(review)}\nAll findings are already saved as pending approval cards. Do not record duplicates or apply fixes.`;
+              } else {
+                report = await runSpecialist({ apiKey, model, githubToken, role: args.role, job: String(args.job || ''), context, log: logActivity, beforeWrite: auditSession.assertWrite });
+              }
+              result = { role: args.role, skipped: claim.skipped, report, next: pipeline.nextRole ? `Read this report before assigning ${pipeline.nextRole}.` : 'The pipeline is finished.' };
             }
           } else if (auditing) {
+            const issue = await auditSession.record(args);
             pipeline.recordIssue();
-            result = { recorded: true, instruction: 'Issue logged for the owner. Do not fix it and do not delegate further: reply with the findings and your proposed fix plan for approval.' };
+            result = { recorded: true, issueId: issue.id, instruction: 'Pending inline owner approval. No further code changes. Report the findings.' };
           } else {
+            if (call.function.name === 'createBranch') await auditSession.assertWrite(args);
             result = await runTool(githubToken, call.function.name, args);
           }
         }
@@ -185,12 +218,15 @@ export default async function(req: Request): Promise<Response> {
       if (iteration === maxIterations - 1) finalText = 'I stopped after reaching the maximum number of steps for one message. Ask me to continue and I will pick up from here.';
     }
 
-    await base44.entities.AstraMessage.create({ conversationId, role: 'assistant', content: finalText, repo: input.repo || undefined });
+    if (auditSession.decision?.status === 'approved' && (!auditPassed || executionFailed) && !auditSession.created.length) finalText += '\n\nThe approved fix has not been confirmed by a completed clean audit. Review the activity and retry the follow-up if needed.';
+    const saved = await base44.entities.AstraMessage.create({ conversationId, role: 'assistant', content: finalText, repo: input.repo || undefined });
+    await auditSession.finish(saved.id, auditPassed, executionFailed);
 
     return Response.json({ reply: finalText, activity }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     // Record the break in the conversation itself so the next message shows where it stopped.
     const message = error.message || 'Astra could not complete that request.';
+    if (auditSession) await auditSession.fail(message);
     if (logBreak) await logBreak(message);
     return Response.json({ error: message }, { status: 500 });
   }

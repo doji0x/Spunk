@@ -14,6 +14,7 @@ export function createPipeline() {
     get auditDone() { return auditDone; },
     get issues() { return issues; },
     recordIssue() { issues += 1; },
+    completeAudit() { auditDone = true; },
 
     // Returns { skipped: [...roles] } when this role may run now, or { error } to
     // hand back to the manager as the tool result so it corrects itself.
@@ -27,7 +28,6 @@ export function createPipeline() {
       }
       const skipped = crewOrder.slice(cursor, index);
       cursor = index + 1;
-      if (role === 'audit') auditDone = true;
       return { skipped };
     }
   };

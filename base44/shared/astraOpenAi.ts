@@ -10,9 +10,8 @@ export function resolveModel(configured) {
   return model || 'gpt-4o';
 }
 
-// parallelToolCalls: true asks OpenAI to return at most one tool call per turn, so the
-// manager delegates to a single specialist and reads its report before choosing the next.
-export async function callOpenAi({ apiKey, model, messages, tools, parallelToolCalls }) {
+// Every agent uses one tool call at a time; there is no inverted configuration flag.
+export async function callOpenAi({ apiKey, model, messages, tools, responseFormat }) {
   for (let attempt = 0; ; attempt++) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -20,7 +19,8 @@ export async function callOpenAi({ apiKey, model, messages, tools, parallelToolC
       body: JSON.stringify({
         model, messages,
         // Reviewer specialists run without any tools, so the tool fields are omitted entirely.
-        ...(tools?.length ? { tools, tool_choice: 'auto', ...(parallelToolCalls ? { parallel_tool_calls: false } : {}) } : {})
+        ...(tools?.length ? { tools, tool_choice: 'auto', parallel_tool_calls: false } : {}),
+        ...(responseFormat ? { response_format: responseFormat } : {})
       })
     });
     if (response.ok) return (await response.json()).choices[0].message;

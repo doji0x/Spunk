@@ -13,7 +13,7 @@ export default function AstraChatPanel({ chat }) {
       </div>
     </div>
     {chat.error && <div className="mb-4 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{chat.error}</div>}
-    <div className="flex-1 pb-4"><AstraMessageList messages={chat.messages} busy={chat.busy} onEdit={chat.editMessage} onDelete={chat.deleteMessage} /></div>
-    <AstraComposer onSend={chat.send} busy={chat.busy} onPause={chat.pause} />
+    <div className="flex-1 pb-4"><AstraMessageList messages={chat.messages} busy={chat.busy} onEdit={chat.editMessage} onDelete={chat.deleteMessage} auditIssues={chat.auditIssues} onAuditDecision={chat.decideAudit} loading={chat.loading} /></div>
+    <AstraComposer onSend={chat.send} busy={chat.busy} onPause={chat.pause} loading={chat.loading} />
   </div>;
 }

@@ -26,7 +26,7 @@ export default function AdminAstra() {
       <div className="mx-auto flex h-14 max-w-3xl items-center gap-2 px-2">
         <Link to="/" aria-label="Close Astra" className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-card"><X className="h-5 w-5" /></Link>
         <div className="flex-1 min-w-0"><p className="font-mono text-[10px] leading-none tracking-[0.3em] text-primary">ADMIN · ASTRA</p><h1 className="font-display font-semibold leading-tight">Repository agent</h1></div>
-        <Button variant="outline" size="sm" onClick={() => { chat.reset(); setTab('chat'); }} className="gap-1.5"><Plus size={14} />New chat</Button>
+        <Button variant="outline" size="sm" disabled={chat.busy} onClick={() => { chat.reset(); setTab('chat'); }} className="gap-1.5"><Plus size={14} />New chat</Button>
       </div>
     </header>
     <main className="mx-auto max-w-3xl px-4 pb-16 pt-6 sm:px-6">

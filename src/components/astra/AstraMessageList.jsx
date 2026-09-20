@@ -5,19 +5,24 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import AstraActivityLine from '@/components/astra/AstraActivityLine';
 import AstraMessageActions from '@/components/astra/AstraMessageActions';
+import AstraAuditCard from '@/components/astra/AstraAuditCard';
 
-export default function AstraMessageList({ messages, busy, onEdit, onDelete }) {
+export default function AstraMessageList({ messages, busy, onEdit, onDelete, auditIssues = [], onAuditDecision, loading }) {
   const endRef = useRef(null);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState('');
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, busy, auditIssues]);
+  const timeline = messages.flatMap(message => [message, ...auditIssues.filter(issue => issue.messageId === message.id).map(issue => ({ id: `audit-${issue.id}`, auditIssue: issue }))]);
+  timeline.push(...auditIssues.filter(issue => !messages.some(message => message.id === issue.messageId)).map(issue => ({ id: `audit-${issue.id}`, auditIssue: issue })));
 
   const startEdit = message => { setEditingId(message.id); setDraft(message.content); };
   const saveEdit = async () => { const text = draft.trim(); if (text) await onEdit(editingId, text); setEditingId(null); };
 
   return <div className="flex flex-col gap-4">
-    {!messages.length && <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">Ask Astra to review a repository — for example <span className="font-mono text-primary">review owner/repo and fix what you find</span>.</div>}
-    {messages.map(message => {
+    {loading && <p className="text-sm text-muted-foreground">Loading conversation…</p>}
+    {!loading && !messages.length && <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">Ask Astra to review a repository — for example <span className="font-mono text-primary">review owner/repo and fix what you find</span>.</div>}
+    {timeline.map(message => {
+      if (message.auditIssue) return <AstraAuditCard key={message.id} issue={message.auditIssue} busy={busy || loading} onDecision={onAuditDecision} />;
       if (message.role === 'activity') return <AstraActivityLine key={message.id} message={message} />;
       const mine = message.role === 'user';
       const saved = !String(message.id).startsWith('local-');
