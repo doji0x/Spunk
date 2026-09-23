@@ -22,9 +22,10 @@ export default function PublicAtomicV1Launch() {
       <AtomicV1Hero enabled={wallet.config.enabled} />
       <AtomicV1WalletSelector disabled={busy} />
       <p className="text-sm text-muted-foreground">Coin creation and the complete image stay in one V1 transaction. Your wallet pays rent and fees; the browser signs only with the separate mint key. No wallet private key or Jupiter API key is requested.</p>
-      {!saved && !session?.completed && wallet.method && <>
+      {!saved && !session?.completed && <>
         <p className="text-xs text-muted-foreground">Budget a 0.03 SOL rent/fee reserve plus your optional first buy. This reserve is not an exact fee quote. Priority fee is capped at 5,000 lamports. Review the native wallet approval before confirming.</p>
-        <AtomicV1Form state={state} allowFirstBuy={wallet.config.firstBuyEnabled} />
+        {!wallet.method && <p className="text-sm text-muted-foreground">Connect a wallet with native V1 signing above, then complete the coin details and image size check to enable launch.</p>}
+        <AtomicV1Form state={state} allowFirstBuy={wallet.config.firstBuyEnabled} launchDisabled={wallet.configLoading || !wallet.config.enabled || !wallet.method || !session} />
       </>}
       {saved && <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <h2 className="font-semibold">Saved launch: {session.input?.name}</h2>
