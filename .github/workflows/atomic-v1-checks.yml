@@ -26,8 +26,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # No runtime --allow-net: these tests cannot submit transactions.
-      - run: deno test --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+      # Explicit dependency installation mode; no runtime network permission.
+      - run: deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
   application:
     runs-on: ubuntu-latest
     strategy:

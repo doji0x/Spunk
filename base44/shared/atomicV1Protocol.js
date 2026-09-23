@@ -65,7 +65,8 @@ export function solLamports(value) {
 export async function verifySignature(signature, message, address) {
   if (!(signature instanceof Uint8Array) || signature.length !== 64) return false;
   const key = await crypto.subtle.importKey('raw', base58Decode(address), 'Ed25519', false, ['verify']);
-  return crypto.subtle.verify('Ed25519', key, signature, message);
+  // Owned ArrayBuffers satisfy WebCrypto's BufferSource contract (not SharedArrayBuffer).
+  return crypto.subtle.verify('Ed25519', key, new Uint8Array(signature), new Uint8Array(message));
 }
 export function inspectMessage(input, enforceSize = true) {
   invariant(input instanceof Uint8Array && input.length >= 42 && input[0] === 0x81, 'Expected a Solana V1 message.');
