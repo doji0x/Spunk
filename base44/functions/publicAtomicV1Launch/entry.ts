@@ -1,67 +1,35 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.48';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.50';
 import { secrets } from 'base44:runtime';
 import { assertMainnet } from '../../shared/mintWallet.ts';
-import { cleanAtomicV1Input, atomicV1InputError, readAtomicV1Image, confirmAtomicV1Launch, addressPattern } from '../../shared/atomicV1Launcher.ts';
-import { prepareUserAtomicV1, submitUserAtomicV1 } from '../../shared/atomicV1UserLaunch.ts';
+import { confirmAtomicV1Launch } from '../../shared/atomicV1Launcher.ts';
+import { createUserAtomicV1Service, nativeConfig } from '../../shared/atomicV1UserLaunch.ts';
+import { publicLaunch } from '../../shared/atomicV1NativeState.js';
+import { base58Decode } from '../../shared/atomicV1Protocol.js';
 
-// Public Atomic V1 launches are fully user-paid and user-signed: the connected wallet is the fee
-// payer and on-chain creator, and the coin mint keypair stays in the user's browser. This endpoint
-// only builds the unsigned version 1 message and submits the signed bytes — it loads no app wallet.
 export default async function(req: Request): Promise<Response> {
   try {
     if (req.method !== 'POST') return Response.json({ error: 'Use POST.' }, { status: 405 });
     const base44 = createClientFromRequest(req);
-    const body = await req.json();
+    const text = await req.text();
+    if (text.length > 35000) return Response.json({ error: 'Request is too large.' }, { status: 413 });
+    const body = JSON.parse(text), config = nativeConfig(secrets);
+    if (body.action === 'config') return Response.json(config);
+    const entities = base44.asServiceRole.entities;
+    if (body.action === 'history') {
+      const walletAddress = String(body.walletAddress || ''); base58Decode(walletAddress);
+      const rows = await entities.AtomicV1Launch.filter({ walletAddress }, '-created_date', 100);
+      return Response.json({ launches: rows.filter(row => row.nativeProtocol === 2 ? row.verifiedPayer || row.atomicV1Verified : row.transactionSignature).slice(0, 50).map(publicLaunch) });
+    }
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
-    const entities = base44.asServiceRole.entities;
-
-    if (body.action === 'confirm') {
+    // Existing launches remain readable. No legacy prepare/submit path is exposed.
+    if (body.action === 'confirm' && !body.id) {
       const [launch] = await entities.AtomicV1Launch.filter({ requestId: String(body.requestId || '') });
-      if (!launch) return Response.json({ error: 'Atomic V1 launch not found.' }, { status: 404 });
-      return Response.json({ launch: await confirmAtomicV1Launch(entities, rpcUrl, launch) });
+      if (!launch || launch.nativeProtocol === 2) return Response.json({ error: 'Use the saved native launch recovery record.' }, { status: 404 });
+      return Response.json({ launch: publicLaunch(await confirmAtomicV1Launch(entities, rpcUrl, launch)) });
     }
-    if (body.action === 'submit') {
-      const submitted = await submitUserAtomicV1({ entities, rpcUrl, body });
-      if (submitted.error) return Response.json({ error: submitted.error, logs: submitted.logs }, { status: submitted.status });
-      return Response.json({ launch: submitted.launch });
-    }
-    if (!['size', 'prepare', 'history'].includes(body.action)) return Response.json({ error: 'Invalid Atomic V1 action.' }, { status: 400 });
-
-    const walletAddress = String(body.walletAddress || '');
-    if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Connect a Solana wallet before launching.' }, { status: 400 });
-
-    if (body.action === 'history') {
-      const launches = await entities.AtomicV1Launch.filter({ walletAddress }, '-created_date', 50);
-      return Response.json({
-        launches: launches.filter(launch => launch.transactionSignature || launch.status !== 'prepared').map(launch => ({
-          requestId: launch.requestId, coinMint: launch.coinMint, name: launch.name, symbol: launch.symbol,
-          description: launch.description || '', imageUrl: launch.imageUrl, imageByteLength: launch.imageByteLength,
-          imageSha256: launch.imageSha256, firstBuyAmount: launch.firstBuyAmount || '', status: launch.status,
-          error: launch.error || '', atomicV1Verified: !!launch.atomicV1Verified,
-          transactionSignature: launch.transactionSignature || '', createdDate: launch.created_date
-        }))
-      });
-    }
-
-    const mintAddress = String(body.mintAddress || '');
-    if (!addressPattern.test(mintAddress)) return Response.json({ error: 'The coin mint key could not be read from your browser. Refresh and try again.' }, { status: 400 });
-    const input = cleanAtomicV1Input(body);
-    const inputError = atomicV1InputError(input);
-    if (inputError) return Response.json({ error: inputError }, { status: 400 });
-    const image = readAtomicV1Image(body.imageBase64);
-    if (image.error) return Response.json({ error: image.error, imageBytes: image.imageBytesCount, maxImageBytes: image.maxImageBytes }, { status: image.status });
-
-    if (body.action === 'prepare') {
-      const recent = await entities.AtomicV1Launch.filter({ walletAddress });
-      const lastHour = recent.filter(launch => launch.transactionSignature && Date.now() - new Date(launch.created_date).getTime() < 3_600_000);
-      if (lastHour.length >= 3) return Response.json({ error: 'You have reached the limit of 3 atomic V1 launches per hour. Try again later.' }, { status: 429 });
-    }
-
-    const outcome = await prepareUserAtomicV1({ entities, rpcUrl, body, input, imageBytes: image.imageBytes, imageMime: image.imageMime, walletAddress, mintAddress, action: body.action });
-    if (outcome.error) return Response.json({ error: outcome.error, size: outcome.size }, { status: outcome.status });
-    return Response.json({ launch: outcome.launch, prepared: outcome.prepared, size: outcome.size });
+    return Response.json(await createUserAtomicV1Service(entities, rpcUrl).action(body, config));
   } catch (error) {
-    return Response.json({ error: error.message || 'Unable to complete the Atomic V1 launch.' }, { status: 500 });
+    return Response.json({ error: error.message || 'Unable to complete the atomic launch.' }, { status: error.status || (error instanceof SyntaxError ? 400 : 500) });
   }
 }

@@ -1,14 +1,22 @@
 import React from 'react';
-import { CheckCircle2, ExternalLink, Loader2, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
+const labels = { prepared: 'Ready for wallet approval', submitting: 'Submission started', unknown: 'Submission outcome uncertain',
+  pending: 'Waiting for finalization', expired: 'Approval expired without a verified launch', failed: 'Transaction failed', incomplete: 'Launch needs investigation' };
 export default function AtomicV1Result({ result, onCheck, busy, linksTo = '/admin/links' }) {
   if (!result) return null;
-  const pending = result.status === 'pending';
   const verified = result.atomicV1Verified;
-  return <section className="rounded-2xl border border-border bg-card p-5">
-    <div className="flex items-center gap-3">{pending ? <Loader2 className="animate-spin text-primary" /> : verified ? <CheckCircle2 className="text-primary" /> : <XCircle className="text-destructive" />}<div><h2 className="font-display text-lg font-semibold">{pending ? 'Waiting for finalization' : verified ? 'Atomic V1 verified' : 'Launch incomplete'}</h2><p className="text-xs text-muted-foreground">{verified ? 'Pump launch and exact image bytes independently verified in one finalized transaction.' : result.error || 'The transaction is being checked on Solana.'}</p></div></div>
-    <dl className="mt-4 space-y-2 break-all font-mono text-[11px]"><div><dt className="text-muted-foreground">Coin mint</dt><dd>{result.coinMint}</dd></div>{result.transactionSignature && <div><dt className="text-muted-foreground">Signature</dt><dd>{result.transactionSignature}</dd></div>}<div className="grid grid-cols-2 gap-3"><div><dt className="text-muted-foreground">Image</dt><dd>{result.imageByteLength} bytes</dd></div><div><dt className="text-muted-foreground">Transaction</dt><dd>v{result.transactionVersion} · {result.serializedTransactionBytes} bytes</dd></div></div></dl>
-    <div className="mt-4 flex items-center gap-4">{result.transactionSignature && <a href={`https://explorer.solana.com/tx/${result.transactionSignature}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs text-primary">View transaction <ExternalLink size={13} /></a>}{pending && <button type="button" disabled={busy} onClick={onCheck} className="text-xs text-primary underline disabled:opacity-50">Check finalization</button>}{linksTo && <Link to={`${linksTo}?coin=${result.coinMint}`} className="text-xs text-primary underline">Edit links</Link>}</div>
+  const checkable = ['submitting', 'unknown', 'pending', 'prepared', 'incomplete'].includes(result.status);
+  return <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
+    <h2 className="text-lg font-semibold">{verified ? 'Atomic V1 verified' : labels[result.status] || 'Launch not verified'}</h2>
+    <p className="text-sm text-muted-foreground">{verified ? 'Coin creation and the exact image commitment were independently checked.' : result.error || 'Check the saved launch before attempting another transaction.'}</p>
+    <dl className="space-y-2 break-all font-mono text-xs"><dt>Coin mint</dt><dd>{result.coinMint}</dd>
+      {result.transactionSignature && <><dt>Transaction signature</dt><dd>{result.transactionSignature}</dd></>}
+      <dt>Image / transaction bytes</dt><dd>{result.imageByteLength} / {result.serializedTransactionBytes} (V{result.transactionVersion})</dd>
+    </dl>
+    <div className="flex flex-wrap gap-4 text-xs text-primary">
+      {result.transactionSignature && <a href={`https://explorer.solana.com/tx/${result.transactionSignature}`} target="_blank" rel="noreferrer">View transaction</a>}
+      {checkable && <button type="button" disabled={busy} onClick={onCheck}>Check status</button>}
+      {linksTo && <Link to={`${linksTo}?coin=${result.coinMint}`}>Edit links</Link>}
+    </div>
   </section>;
 }
