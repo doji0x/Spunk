@@ -18,7 +18,7 @@ export function nativeConfig(secrets) {
       .map(([name, modes]) => [name, (modes as unknown[]).filter((mode): mode is string => typeof mode === 'string' && ['signTransaction', 'signAndSendTransaction'].includes(mode))]));
   } catch { /* Malformed rollout config stays disabled. */ }
   return { enabled: (secrets.get('ATOMIC_V1_NATIVE_ENABLED') || 'true') === 'true' && Object.values(walletMethods).some(modes => modes.length),
-    walletMethods, firstBuyEnabled: secrets.get('ATOMIC_V1_FIRST_BUY_ENABLED') === 'true', protocolVersion: 2, maximumBytes: 4096 };
+    walletMethods, firstBuyEnabled: (secrets.get('ATOMIC_V1_FIRST_BUY_ENABLED') || 'true') === 'true', protocolVersion: 2, maximumBytes: 4096 };
 }
 export function createUserAtomicV1Service(entities, rpcUrl) {
   const rpc = (method, params) => rpcRequest(rpcUrl, method, params);
