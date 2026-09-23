@@ -50,7 +50,7 @@ export default function Home() {
     <ValidateHeader onLearn={() => setAbout(true)} />
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
       <div className="text-left">
-        <AtomicV1Hero />
+        <AtomicV1Hero showLaunchLink />
       </div>
 
       <div className="mt-16"><PunksHero /></div>
