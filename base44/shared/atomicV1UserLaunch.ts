@@ -13,11 +13,11 @@ export { buildUnsignedAtomicV1 } from './atomicV1NativeBuilder.ts';
 export function nativeConfig(secrets) {
   let walletMethods: Record<string, string[]> = {};
   try {
-    const parsed = JSON.parse(secrets.get('ATOMIC_V1_NATIVE_WALLETS') || '{}');
+    const parsed = JSON.parse(secrets.get('ATOMIC_V1_NATIVE_WALLETS') || '{"*":["signTransaction","signAndSendTransaction"]}');
     walletMethods = Object.fromEntries(Object.entries(parsed).filter(([name, modes]) => name.length <= 80 && Array.isArray(modes))
       .map(([name, modes]) => [name, (modes as unknown[]).filter((mode): mode is string => typeof mode === 'string' && ['signTransaction', 'signAndSendTransaction'].includes(mode))]));
   } catch { /* Malformed rollout config stays disabled. */ }
-  return { enabled: secrets.get('ATOMIC_V1_NATIVE_ENABLED') === 'true' && Object.values(walletMethods).some(modes => modes.length),
+  return { enabled: (secrets.get('ATOMIC_V1_NATIVE_ENABLED') || 'true') === 'true' && Object.values(walletMethods).some(modes => modes.length),
     walletMethods, firstBuyEnabled: secrets.get('ATOMIC_V1_FIRST_BUY_ENABLED') === 'true', protocolVersion: 2, maximumBytes: 4096 };
 }
 export function createUserAtomicV1Service(entities, rpcUrl) {

@@ -38,6 +38,6 @@ export function supportedMethods(wallet, account = null) {
 }
 export function enabledMethods(wallet, account, config) {
   if (!config?.enabled || !wallet || !account) return [];
-  const approved = config.walletMethods?.[wallet.name] || [];
+  const approved = config.walletMethods?.[wallet.name] || config.walletMethods?.['*'] || [];
   return supportedMethods(wallet, account).filter(method => approved.includes(method));
 }

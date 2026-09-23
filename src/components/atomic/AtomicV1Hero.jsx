@@ -15,6 +15,6 @@ export default function AtomicV1Hero({ enabled = false }) {
       <span className="inline-flex rounded-xl bg-primary/15 p-2 text-primary"><Icon className="h-4 w-4" /></span>
       <h3 className="mt-3 font-display text-sm font-semibold">{point.title}</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{point.copy}</p>
     </div>; })}</div>
-    <p className="mt-6 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs leading-5 text-muted-foreground">{enabled ? 'Select an enabled wallet that supports native V1 transaction approval. Unsupported methods remain unavailable.' : 'Public launches remain paused until the wallet and backend acceptance tests are completed. Existing launch history and recovery remain available.'}</p>
+    <p className="mt-6 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs leading-5 text-muted-foreground">{enabled ? 'Select an enabled wallet that supports native V1 transaction approval. Unsupported methods remain unavailable.' : 'Public launches are currently paused. Existing launch history and recovery remain available.'}</p>
   </section>;
 }

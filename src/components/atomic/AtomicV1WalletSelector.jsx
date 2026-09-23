@@ -15,7 +15,7 @@ export default function AtomicV1WalletSelector({ disabled = false }) {
         {state.methods.map(method => <option key={method} value={method}>{method === 'signTransaction' ? 'Wallet signs; application submits' : 'Wallet signs and submits'}</option>)}</select></label>}
       {!state.supportedMethods(state.selected, state.account).length && <p className="text-sm text-muted-foreground">This account does not advertise native V1 transaction signing. Message signing will not be used as a substitute.</p>}
       <button type="button" className="rounded-lg px-4 py-2 text-sm text-primary disabled:opacity-50" disabled={disabled} onClick={state.disconnect}>Disconnect</button></>}
-    {!state.configLoading && !state.config.enabled && <p className="text-sm text-muted-foreground">Public native launching is disabled pending acceptance tests. Existing launch recovery and history remain available.</p>}
+    {!state.configLoading && !state.config.enabled && <p className="text-sm text-muted-foreground">Public native launching is currently paused. Existing launch recovery and history remain available.</p>}
     {state.config.enabled && state.account && !state.method && <p className="text-sm text-muted-foreground">This wallet/method has not been enabled for this launcher.</p>}
     {state.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
     <details className="text-xs"><summary className="cursor-pointer">Wallet capability diagnostics</summary><pre className="mt-2 overflow-auto">{JSON.stringify(state.wallets.map(wallet => ({ name: wallet.name,

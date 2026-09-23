@@ -28,7 +28,7 @@ export async function compareAndSet(entity, record, patch) {
   return { ...record, ...patch, stateVersion: record.stateVersion + 1 };
 }
 export function assertEnabled(config, walletName, signingMethod, firstBuy = '') {
-  invariant(config.enabled && (config.walletMethods?.[walletName] || []).includes(signingMethod), 'This wallet/method is not enabled for Atomic V1.');
+  invariant(config.enabled && (config.walletMethods?.[walletName] || config.walletMethods?.['*'] || []).includes(signingMethod), 'This wallet/method is not enabled for Atomic V1.');
   invariant(!firstBuy || config.firstBuyEnabled, 'Atomic first buys are not enabled yet.');
 }
 
