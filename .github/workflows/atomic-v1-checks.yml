@@ -1,0 +1,51 @@
+name: Atomic V1 native signing checks
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'base44/**'
+      - 'tests/atomic-v1/**'
+      - 'package*.json'
+      - '.github/workflows/atomic-v1-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/atomic-v1/native.test.mjs
+  sdk-roundtrip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # Explicit dependency installation mode; no runtime network permission.
+      - run: deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+  application:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: [base, head]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.revision == 'base' && (github.event.pull_request.base.sha || github.event.repository.default_branch) || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm ls @solana/kit @solana/compat @solana/web3.js
+      - run: npm run build
+      - if: always()
+        run: npm run lint
+      - if: always()
+        run: npm run typecheck

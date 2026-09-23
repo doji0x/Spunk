@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
@@ -27,6 +27,7 @@ import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
 import ProofOfFart from '@/pages/ProofOfFart';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
+import AtomicV1WalletProvider from '@/contexts/AtomicV1WalletContext';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -57,8 +58,10 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Home />} />
       <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/inscribe" element={<PublicInscribe />} />
-      <Route path="/atomic-v1" element={<PublicAtomicV1Launch />} />
-      <Route path="/atomic-v1/history" element={<AtomicV1History />} />
+      <Route element={<AtomicV1WalletProvider><Outlet /></AtomicV1WalletProvider>}>
+        <Route path="/atomic-v1" element={<PublicAtomicV1Launch />} />
+        <Route path="/atomic-v1/history" element={<AtomicV1History />} />
+      </Route>
       <Route path="/feed" element={<Feed />} />
       <Route path="/profile/:wallet" element={<SocialProfile />} />
       <Route path="/proof-of-fart" element={<ProofOfFart />} />
