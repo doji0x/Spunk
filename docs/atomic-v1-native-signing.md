@@ -1,67 +1,49 @@
 # Atomic V1 native signing
 
-The current implementation and live-test instructions are documented in
-[Phantom atomic launch completion](phantom-atomic-launch-completion.md).
-That document supersedes the earlier draft's default-off/wallet-allowlist-only design.
+## Current wallet transport
 
-## Current signing paths
+The current Phantom transaction-object correction is documented in
+[Phantom V1 wallet-object signing](atomic-v1-wallet-object-signing.md).
+It supersedes the raw-message `provider.request` signing transport described in
+the earlier completion document.
 
-The public Atomic V1 page exposes a **Connect Phantom - native request** button.
-This selects the injected provider's documented native `signTransaction` JSON-RPC
-request. It sends Base58 of the exact compiled V1 message. It does not require
-Wallet Standard to advertise numeric V1, and does not fabricate that capability.
-The wallet itself decides whether it accepts the format.
+The public **Launch atomic V1 coin** action connects Phantom when necessary,
+awaits the correct wallet's session, prepares the coin/image transaction, adds
+the browser-held mint signature, and calls `provider.signTransaction` with a real
+V1 VersionedTransaction object. Kit supplies canonical message/wire serialization;
+web3.js 1.99.0's V1 reader supplies the decoded object but is not used as a V1
+transaction encoder. Both original message intent and returned signatures are
+validated before submission.
 
-The browser keeps the mint co-signature, verifies Phantom's payer signature over
-the original message, assembles the final V1 wire using Kit, and submits through
-the backend. The connected account remains payer, creator and optional buyer.
-The complete image and original `VALIDATE-v1` commitment remain in the same
-transaction. The public path never loads the admin payer key.
+The native route does not require Wallet Standard to advertise V1. It also does
+not pretend that a wallet supports V1: the installed wallet may still reject it.
+There is no signMessage fallback, V0 relabeling, alternate automatic signing
+request or separate image transaction. The `phantom-request` stored label remains
+for compatibility with existing backend policy and saved launches.
 
-Wallet Standard signing remains a separate optional integration, with its real
-method-specific advertised versions and existing operator configuration. There
-is no automatic switch between routes after an uncertain wallet response.
+## Existing lifecycle and configuration
 
-## Configuration
+- [Launch-driven connection/session behavior](atomic-v1-launch-button-connection.md)
+- [Earlier preparation, metadata and recovery implementation](phantom-atomic-launch-completion.md)
 
-`ATOMIC_V1_PHANTOM_REQUEST_ENABLED` is the dedicated native-request control.
-It defaults to enabled unless explicitly set to the string `false`.
-The older `ATOMIC_V1_NATIVE_ENABLED` and `ATOMIC_V1_NATIVE_WALLETS` control the
-Wallet Standard routes; they do not stand in for Phantom's native request API.
-`ATOMIC_V1_FIRST_BUY_ENABLED` retains its existing behavior/default from main.
-No Jupiter API key is needed for wallet signing.
+Only the signing transport in the older completion document is superseded. The
+connected account remains payer/creator/buyer, the mint key stays in the browser,
+and the image commitment, metadata authorization, first-buy limit, signature
+verification and finalized launch proof retain their existing behavior.
 
-A lack of a cached size estimate, an in-progress preview, a stale negative size
-preview, or a missing V1 capability flag does not disable the public submit
-button. Clicking it performs a fresh preparation. Correctness checks still
-reject malformed input, oversized final transactions, wrong signer/coin/image
-intent, invalid signatures, expired preparations and actual simulation errors.
-Those are not disguised as Phantom errors. Busy protection prevents accidental
-duplicate clicks. The existing admin form retains its prior sizing behavior.
+`ATOMIC_V1_PHANTOM_REQUEST_ENABLED=false` explicitly disables the dedicated native
+route. Older native-wallet flags continue controlling the separate Wallet Standard
+routes. No new secret, Jupiter API key or connected-wallet private key is required.
 
-## Security and evidence boundaries
+Cached size previews and a missing rendered connection/session do not gate the
+Launch action. Actual transaction integrity, size, expiry, simulation and account
+checks remain. Existing admin and unrelated wallet features are unchanged.
 
-Native requests use `signTransaction`, never `signMessage`. The code does not
-mislabel V1 as V0, modify wallet capabilities, bypass wallet warnings, export
-wallet keys, fund a temporary payer, or split the image into a second transaction.
+Browser Web Locks/per-record conditional writes still do not establish a unique
+initial database insert; ingress rate limiting remains operational hardening.
+The new object adapter does not change those backend guarantees.
 
-Mint-key authorization binds preview metadata to the preparation without adding
-a Phantom message-signing prompt. Preview availability is not an on-chain
-verification claim. Success requires exact finalized-message/signature/instruction
-and image proof, not merely receipt of a transaction ID.
-
-Recovery retains the original mint, request identity and signed transaction.
-Per-record state transitions use conditional writes; browser Web Locks protect
-normal same-wallet actions across supported tabs. **This does not establish a
-database-wide unique initial preparation claim.** Concurrent initial creates can
-still produce duplicate rows without a deployed unique constraint. Retain ingress
-rate limits; browser locking is not server abuse protection.
-
-The checked-in tests include actual SDK/Kit create-only and create-plus-buy
-encoding, real ephemeral Ed25519 signatures, mocked native-provider responses,
-recovery/state tests, and rendering tests for the actual form's button gating.
-They do not prove live Phantom extension acceptance or deployed Base44 behavior.
-No mainnet transaction was broadcast during implementation.
-
-See the completion document for exact tested revisions, CI results, deployment
-requirements, known limitations and primary documentation references.
+Tests exercise real codecs/instructions and real ephemeral signatures, but wallet
+providers are mocked. No test result here is evidence of a live Phantom approval,
+a successful mainnet creation, or a deployed Base44 application. See the current
+PR and wallet-object document for the exact test results and their limits.

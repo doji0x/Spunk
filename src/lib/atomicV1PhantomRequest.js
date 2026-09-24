@@ -1,6 +1,6 @@
-import { base58Decode, base58Encode, equalBytes, invariant, verifySignature } from '../../base44/shared/atomicV1Protocol.js';
+import { base58Decode, equalBytes, invariant, verifySignature } from '../../base44/shared/atomicV1Protocol.js';
 
-// App transport, NOT a fabricated Wallet Standard transaction capability.
+// App transport identifier retained for existing saved records and backend policy.
 export const PHANTOM_REQUEST = 'phantom-request';
 /** @param {any} [target] */
 export function getInjectedPhantom(target = globalThis.window) {
@@ -29,24 +29,34 @@ function bytes(value, length = undefined) {
 function responseSignature(value) {
   return typeof value === 'string' ? base58Decode(value, 64) : bytes(value, 64);
 }
-/** Phantom's documented native signTransaction request:
- * https://docs.phantom.com/solana/sending-a-transaction#request-2
- * params.message is Base58 of the compiled MESSAGE, not the full transaction,
- * a hash, UTF-8 prose, or a V0-labelled object. Phantom must accept actual V1.
- * The mint signature is retained locally and added after the payer approves.
+/** Pass a complete V1 VersionedTransaction to the native method. Do not apply
+ * Phantom's legacy raw-message request example to the V1 wire format.
+ * PHANTOM_REQUEST is only a persisted app label, not a raw request API selection.
  */
 export async function requestPhantomV1({ provider, message, mintAddress, mintSignature, payerAddress, codec, isCurrent }) {
-  invariant(provider?.isPhantom && typeof provider.request === 'function', 'Phantom native request API is unavailable. Open the published site in Phantom or its browser extension.');
+  invariant(provider?.isPhantom && typeof provider.signTransaction === 'function',
+    'This Phantom provider does not expose native signTransaction. No alternate signing request was made.');
   invariant(isCurrent() && phantomAddress(provider) === payerAddress, 'The connected Phantom account changed before approval.');
+  invariant(typeof codec.toWalletTransaction === 'function', 'The V1 wallet transaction codec is missing.');
+  const wire = codec.encode(message, { [mintAddress]: mintSignature });
+  const decodedInput = codec.decode(wire);
+  invariant(decodedInput.signers.length === 2 && decodedInput.signers[0] === payerAddress && decodedInput.signers[1] === mintAddress,
+    'The wallet transaction has unexpected signer addresses.');
+  const adapter = codec.toWalletTransaction(wire);
+  const requestInfo = { method: 'signTransaction', transport: 'versioned-transaction-object', version: 1,
+    messageBytes: message.length, transactionBytes: wire.length, signatureSlots: decodedInput.signers.length };
   let result;
   try {
-    result = await provider.request({ method: 'signTransaction', params: { message: base58Encode(message) } });
+    // Exactly one native sign-only call from Launch. Never retry another method
+    // after an error, supply only the message as a transaction, or relabel as V0.
+    result = await provider.signTransaction(adapter.transaction);
   } catch (reason) {
     const error = new Error(typeof reason?.message === 'string' ? reason.message : String(reason));
-    Object.assign(error, { source: 'phantom', stage: 'wallet-signing', code: reason?.code, cause: reason });
+    Object.assign(error, { source: 'phantom', stage: 'wallet-signing', code: reason?.code, cause: reason, requestInfo });
     throw error;
   }
   invariant(isCurrent() && phantomAddress(provider) === payerAddress, 'The Phantom account changed during approval; no transaction was submitted.');
+  adapter.checkMessage(adapter.transaction);
   if (result?.publicKey) {
     const returned = typeof result.publicKey === 'string' ? result.publicKey : result.publicKey.toBase58?.() || result.publicKey.toString?.();
     invariant(returned === payerAddress, 'Phantom returned a signature for a different account.');
@@ -55,11 +65,15 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
   if (result?.signature !== undefined && (typeof result.signature === 'string' || bytes(result.signature))) {
     signature = responseSignature(result.signature);
   } else {
-    const transaction = result?.signedTransaction || result?.transaction || result;
-    const wire = bytes(typeof transaction?.serialize === 'function'
-      ? transaction.serialize({ requireAllSignatures: false, verifySignatures: false }) : transaction);
-    invariant(wire && wire.length <= 4096, 'Phantom returned an unsupported transaction response. No transaction was submitted.');
-    const decoded = codec.decode(wire);
+    const transaction = result?.signedTransaction || result?.transaction || result || adapter.transaction;
+    // web3.js V1 results may be read-only. Check their decoded fields and use
+    // Kit for signatures/wire rather than calling the unsupported serializer.
+    const signedWire = transaction?.message && Array.isArray(transaction.signatures)
+      ? adapter.encodeResult(transaction)
+      : bytes(typeof transaction?.serialize === 'function'
+        ? transaction.serialize({ requireAllSignatures: false, verifySignatures: false }) : transaction);
+    invariant(signedWire && signedWire.length <= 4096, 'Phantom returned an unsupported transaction response. No transaction was submitted.');
+    const decoded = codec.decode(signedWire);
     invariant(equalBytes(decoded.message, message), 'Phantom changed the prepared message. No transaction was submitted.');
     signature = decoded.signatures[payerAddress];
     const coSignature = decoded.signatures[mintAddress];
