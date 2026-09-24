@@ -19,9 +19,8 @@ export function parseWallet(value, secretName = publicWalletSecretName) {
 }
 
 export async function assertMainnet(rpcUrl) {
-  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getGenesisHash' }) });
-  const payload = await response.json();
-  if (payload.result !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
+  const genesisHash = await rpcRequest(rpcUrl, 'getGenesisHash', []);
+  if (genesisHash !== '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Minting is locked to Solana mainnet.');
 }
 
 export async function getLatestBlockhash(umi) {
@@ -29,8 +28,20 @@ export async function getLatestBlockhash(umi) {
 }
 
 export async function rpcRequest(rpcUrl, method, params) {
-  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-  const payload = await response.json();
-  if (payload.error) throw new Error(payload.error.message || 'Solana RPC request failed.');
-  return payload.result;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' },
+      signal: controller.signal, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+    const payload = await response.json();
+    if (payload.error) throw new Error(payload.error.message || 'Solana RPC request failed.');
+    return payload.result;
+  } catch (error) {
+    if (controller.signal.aborted) throw Object.assign(
+      new Error(`Solana RPC ${method} timed out after 20 seconds. Keep the saved launch and check its status before retrying.`),
+      { status: 504, code: 'RPC_TIMEOUT', stage: `rpc-${method}` });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }

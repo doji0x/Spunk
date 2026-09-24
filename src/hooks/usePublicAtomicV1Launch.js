@@ -7,12 +7,16 @@ import { signAtomicV1 } from '@/lib/atomicV1UserSign';
 import { isPhantomRequest } from '@/lib/atomicV1PhantomRequest';
 import { clearRecovery, readRecovery, writeRecovery } from '@/lib/atomicV1Recovery';
 import { createLaunchSessionLoader } from '@/lib/atomicV1LaunchSession';
+import atomicV1Timeout from '@/lib/atomicV1Timeout';
 import { invariant, sha256, solLamports, toBase64 } from '../../base44/shared/atomicV1Protocol.js';
 import { preparationAuthorizationBytes } from '../../base44/shared/atomicV1Authorization.js';
 
 const initial = { name: '', symbol: '', description: '', firstBuyAmount: '' };
 const emptyLinks = { website: '', twitter: '', github: '' };
-const invoke = async payload => (await base44.functions.invoke('publicAtomicV1Launch', payload)).data;
+const invoke = async payload => (await atomicV1Timeout(
+  base44.functions.invoke('publicAtomicV1Launch', payload), 120000,
+  `Launch ${payload.action} timed out after 120 seconds. The request may still finish. Keep this saved launch; check its status before trying again.`,
+  `launch-${payload.action}`)).data;
 const errorText = reason => reason.response?.data?.error || reason.message || 'Atomic V1 launch failed.';
 export default function usePublicAtomicV1Launch() {
   const wallet = useAtomicV1Wallet();
@@ -31,7 +35,7 @@ export default function usePublicAtomicV1Launch() {
     const message = errorText(reason);
     setError(message);
     setFailure({ source: reason.source === 'phantom' ? 'Phantom' : 'Application / RPC',
-      code: reason.source === 'phantom' ? reason.code : reason.response?.status || reason.status,
+      code: reason.source === 'phantom' ? reason.code : reason.response?.status || reason.status || reason.code,
       stage: reason.stage || stageRef.current, message });
   }
   function persist(saved) {
@@ -226,7 +230,9 @@ export default function usePublicAtomicV1Launch() {
         progress('Uploading the exact image for metadata.');
         const core = /** @type {{UploadPublicFile?: (args: {file: File}) => Promise<{file_url: string}>}} */ (base44.integrations.Core);
         invariant(typeof core.UploadPublicFile === 'function', 'The Base44 public file-upload integration is unavailable.');
-        const uploaded = await core.UploadPublicFile({ file: selectedFile });
+        const uploaded = await atomicV1Timeout(core.UploadPublicFile({ file: selectedFile }), 60000,
+          'Image upload timed out after 60 seconds. No transaction approval was requested. Try Launch again with the same image.',
+          'image-upload');
         invariant(snapshot.isCurrent(), 'Wallet changed before preparation.');
         saved = persist({ ...saved, imageUrl: uploaded.file_url, preparationRequested: true });
       }

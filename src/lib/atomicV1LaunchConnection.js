@@ -1,5 +1,6 @@
 import { base58Decode, invariant, MAINNET } from '../../base44/shared/atomicV1Protocol.js';
 import { phantomAddress } from './atomicV1PhantomRequest.js';
+import atomicV1Timeout from '@/lib/atomicV1Timeout';
 
 export function phantomAccount(provider) {
   const address = phantomAddress(provider);
@@ -20,8 +21,10 @@ export async function connectPhantomForLaunch(provider) {
   try {
     let response;
     try {
-      response = await (typeof provider.connect === 'function'
-        ? provider.connect() : provider.request({ method: 'connect' }));
+      response = await atomicV1Timeout(
+        typeof provider.connect === 'function' ? provider.connect() : provider.request({ method: 'connect' }),
+        60000, 'Phantom connection timed out after 60 seconds. Check Phantom for a pending connection request before trying again.',
+        'wallet-connection');
     } catch (reason) {
       throw Object.assign(new Error(typeof reason?.message === 'string' ? reason.message : String(reason)),
         { source: 'phantom', stage: 'wallet-connection', code: reason?.code, cause: reason });
