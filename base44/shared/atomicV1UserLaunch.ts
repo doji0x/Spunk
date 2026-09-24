@@ -5,6 +5,7 @@ import { cleanSocials } from './launchSocials.ts';
 import { atomicV1Codec } from './atomicV1Kit.ts';
 import { buildUnsignedAtomicV1 } from './atomicV1NativeBuilder.ts';
 import { assertEnabled, createNativeState, preparedLaunch, publicLaunch, tokenHash } from './atomicV1NativeState.js';
+import { verifyPreparationAuthorization } from './atomicV1Authorization.js';
 import { validateIntent, BUY } from './atomicV1Intent.js';
 import { PUMP, TOKEN_2022, base58Decode, equalBytes, extractCommitment, fromBase64, inspectMessage,
   invariant, metadataUriFor, sha256, solLamports, utf8 } from './atomicV1Protocol.js';
@@ -18,7 +19,7 @@ export function nativeConfig(secrets) {
       .map(([name, modes]) => [name, (modes as unknown[]).filter((mode): mode is string => typeof mode === 'string' && ['signTransaction', 'signAndSendTransaction'].includes(mode))]));
   } catch { /* Malformed rollout config stays disabled. */ }
   return { enabled: (secrets.get('ATOMIC_V1_NATIVE_ENABLED') || 'true') === 'true' && Object.values(walletMethods).some(modes => modes.length),
-    walletMethods, firstBuyEnabled: (secrets.get('ATOMIC_V1_FIRST_BUY_ENABLED') || 'true') === 'true', protocolVersion: 2, maximumBytes: 4096 };
+    walletMethods, phantomRequestEnabled: secrets.get('ATOMIC_V1_PHANTOM_REQUEST_ENABLED') !== 'false', firstBuyEnabled: (secrets.get('ATOMIC_V1_FIRST_BUY_ENABLED') || 'true') === 'true', protocolVersion: 3, maximumBytes: 4096 };
 }
 export function createUserAtomicV1Service(entities, rpcUrl) {
   const rpc = (method, params) => rpcRequest(rpcUrl, method, params);
@@ -46,7 +47,7 @@ export function createUserAtomicV1Service(entities, rpcUrl) {
     if (!estimate || built.size.remainingBytes < 0) return { ...built, bondingCurve: derived.bondingCurve };
     await validateIntent(inspectMessage(fromBase64(built.messageBase64)), draft, derived);
     const balance = (await rpc('getBalance', [draft.walletAddress, { commitment: 'confirmed' }])).value;
-    invariant(BigInt(balance) >= 30000000n + budget, 'The payer needs the first-buy amount plus a 0.03 SOL rent/fee reserve.');
+    invariant(Number.isSafeInteger(balance) && BigInt(balance) >= budget, 'The payer balance is below the requested first buy.');
     const simulation = (await rpc('simulateTransaction', [built.unsignedTransactionBase64,
       { encoding: 'base64', commitment: 'confirmed', sigVerify: false }])).value;
     invariant(simulation && !simulation.err, `Unsigned launch simulation failed: ${JSON.stringify(simulation?.err)}`);
@@ -67,11 +68,13 @@ export function createUserAtomicV1Service(entities, rpcUrl) {
     input.firstBuyAmount = solLamports(input.firstBuyAmount) === 0n ? '' : input.firstBuyAmount;
     const draft = { ...input, walletAddress: body.walletAddress, coinMint: body.mintAddress,
       imageByteLength: image.imageBytes.length, imageSha256: await sha256(image.imageBytes), imageMime: image.imageMime,
-      imageUrl: body.imageUrl || '', socials: cleanSocials(body.socials), walletName: body.walletName, signingMethod: body.signingMethod };
-    assertEnabled(config, draft.walletName, draft.signingMethod, draft.firstBuyAmount);
+      imageUrl: body.imageUrl || '', socials: cleanSocials(body.socials), walletName: body.walletName, signingMethod: body.signingMethod,
+      signingTransport: body.signingTransport === 'phantom-request' ? 'phantom-request' : 'wallet-standard' };
+    assertEnabled(config, draft.walletName, draft.signingMethod, draft.firstBuyAmount, draft.signingTransport);
     if (sizing) return { size: (await build(draft, image.imageBytes, false)).size };
     invariant(typeof entity.updateMany === 'function', 'Conditional entity writes are unavailable.');
     invariant(typeof body.imageUrl === 'string' && /^https:\/\//.test(body.imageUrl), 'The public image upload is missing.');
+    await verifyPreparationAuthorization(draft, fromBase64(body.mintAuthorization, 64));
     const submitTokenHash = await tokenHash(draft, body.submitToken);
     const intentHash = await sha256(utf8(JSON.stringify(draft)));
     const existing = await entity.filter({ requestId: draft.requestId, walletAddress: draft.walletAddress, coinMint: draft.coinMint }, 'created_date', 20);
@@ -88,12 +91,11 @@ export function createUserAtomicV1Service(entities, rpcUrl) {
     const built = await build(draft, image.imageBytes, true);
     invariant(built.size.remainingBytes >= 0, `Remove ${built.size.requiredReductionBytes} image bytes to fit this transaction.`);
     const { unsignedTransactionBase64: _unsigned, ...persistentBuild } = built;
-    const record = await entity.create({ ...draft, ...persistentBuild, intentHash,
+    const record = await entity.create({ ...draft, ...persistentBuild, intentHash, metadataAuthorized: true,
       submitTokenHash, nativeProtocol: 2, stateVersion: 0, status: 'prepared', transactionSignature: '', signedTransactionBase64: '',
       transactionVersion: 1, serializedTransactionBytes: built.size.finalSerializedTransactionBytes, commitment: 'VALIDATE-v1',
       atomicV1Verified: false, verifiedPayer: false, metadataUri: metadataUriFor(draft.coinMint), checkedAt: new Date().toISOString(), error: '' });
     invariant(record?.id, 'The backend did not persist the preparation.');
-    // Read back schema fields before any wallet is allowed to sign.
     const persisted = await state.load(record.id, body.submitToken);
     invariant(persisted.messageHash === built.messageHash && persisted.stateVersion === 0, 'Preparation schema round-trip failed.');
     return { launch: publicLaunch(persisted), prepared: preparedLaunch(persisted), size: built.size };
@@ -103,8 +105,15 @@ export function createUserAtomicV1Service(entities, rpcUrl) {
     const id = String(body.id || ''), token = body.submitToken;
     let record = await state.load(id, token);
     if (body.action === 'resume' || body.action === 'confirm') record = await state.reconcile(record);
-    else if (body.action === 'preflight') {
-      assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount);
+    else if (body.action === 'native-route') {
+      invariant(record.status === 'prepared' && !record.transactionSignature && !record.signedTransactionBase64,
+        'An active or already signed launch cannot change submission routes.');
+      await verifyPreparationAuthorization(record, fromBase64(body.mintAuthorization, 64));
+      assertEnabled(config, 'Phantom', 'signTransaction', record.firstBuyAmount, 'phantom-request');
+      record = await state.change(record, { walletName: 'Phantom', signingMethod: 'signTransaction',
+        signingTransport: 'phantom-request', metadataAuthorized: true });
+    } else if (body.action === 'preflight') {
+      assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount, record.signingTransport);
       invariant(body.messageHash === record.messageHash && ['prepared', 'submitting'].includes(record.status), 'The prepared launch changed or was already submitted.');
       await state.fresh(record, 10);
       return { fresh: true, messageHash: record.messageHash, lastValidBlockHeight: record.lastValidBlockHeight };
@@ -115,7 +124,7 @@ export function createUserAtomicV1Service(entities, rpcUrl) {
     } else if (body.action === 'arm') record = await state.arm(id, token, config);
     else if (body.action === 'register') record = await state.register(id, token, body.transactionSignature);
     else if (body.action === 'refresh') {
-      assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount);
+      assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount, record.signingTransport);
       record = await state.reconcile(record);
       invariant(record.status === 'expired', 'Refresh is allowed only after finalized expiry and an absent mint.');
       const image = extractCommitment(inspectMessage(fromBase64(record.messageBase64)), record.coinMint).image;

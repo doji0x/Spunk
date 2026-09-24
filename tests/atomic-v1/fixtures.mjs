@@ -5,9 +5,15 @@ import { ATA, MAINNET, NOOP, PUMP, SYSTEM, TOKEN_2022, base58Decode, base58Encod
 import { CREATE } from '../../base44/shared/atomicV1Intent.js';
 export const cat = (...parts) => Uint8Array.from(parts.flatMap(p => [...p]));
 export function key() {
-  const pair = generateKeyPairSync('ed25519');
-  const publicKey = new Uint8Array(pair.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32));
-  return { address: base58Encode(publicKey), publicKey, sign: bytes => new Uint8Array(sign(null, bytes, pair.privateKey)) };
+  // Independent boundary fixtures must have equal URI lengths. Both 43- and
+  // 44-character public keys are valid; only test fixtures select a fixed width.
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const pair = generateKeyPairSync('ed25519');
+    const publicKey = new Uint8Array(pair.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32));
+    const address = base58Encode(publicKey);
+    if (address.length === 44) return { address, publicKey, sign: bytes => new Uint8Array(sign(null, bytes, pair.privateKey)) };
+  }
+  throw new Error('Could not create a fixed-width test address.');
 }
 const u32 = value => { const bytes = new Uint8Array(4); new DataView(bytes.buffer).setUint32(0, value, true); return bytes; };
 export const string = value => cat(u32(utf8(value).length), utf8(value));
@@ -35,7 +41,7 @@ export async function fixture(imageSize = 1400) {
     { programAddress: NOOP, accounts: [], data: await commitmentPayload(mint.address, image) }];
   const blockhash = key().address;
   const message = encodeMessage({ payer: payer.address, mint: mint.address, instructions, blockhash });
-  const codec = { // Test double for Kit codec. Production uses Kit round-trip, covered separately in sdk.test.ts.
+  const codec = {
     encode(bytes, signatures = {}) { const parsed = inspectMessage(bytes); return cat(bytes, ...parsed.signers.map(a => signatures[a] || new Uint8Array(64))); },
     decode: inspectWire, derive: async () => derived,
   };

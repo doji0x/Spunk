@@ -1,6 +1,7 @@
-/** Minimal Wallet Standard discovery transport. No provider shims or SDK/CDN.
- * Implements the same two-way registration contract as @wallet-standard/app:
- * https://github.com/wallet-standard/wallet-standard/blob/master/packages/core/app/src/wallets.ts
+import { isPhantomRequest } from './atomicV1PhantomRequest.js';
+
+/** Wallet Standard registration remains separate from the injected Phantom
+ * request transport. We never invent supportedTransactionVersions for a wallet.
  */
 export function createWalletRegistry(target) {
   const wallets = new Set(), listeners = new Set();
@@ -17,19 +18,20 @@ export function createWalletRegistry(target) {
   const api = Object.freeze({ register });
   const receive = event => {
     if (typeof event.detail === 'function') {
-      try { event.detail(api); } catch { /* One broken extension must not prevent other registrations. */ }
+      try { event.detail(api); } catch { /* Other extensions can still register. */ }
     }
   };
   target?.addEventListener('wallet-standard:register-wallet', receive);
   if (target) target.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api }));
-  return {
-    get: () => [...wallets],
+  return { get: () => [...wallets],
     subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); },
     dispose() { disposed = true; target?.removeEventListener('wallet-standard:register-wallet', receive); listeners.clear(); wallets.clear(); },
   };
 }
 export const NATIVE_METHODS = ['signTransaction', 'signAndSendTransaction'];
+/** Available app routes, not a claim that Phantom accepts the V1 wire format. */
 export function supportedMethods(wallet, account = null) {
+  if (isPhantomRequest(wallet)) return ['signTransaction'];
   return NATIVE_METHODS.filter(method => {
     const name = `solana:${method}`, feature = wallet?.features?.[name];
     return feature?.supportedTransactionVersions?.includes(1) && typeof feature[method] === 'function' &&
@@ -37,7 +39,11 @@ export function supportedMethods(wallet, account = null) {
   });
 }
 export function enabledMethods(wallet, account, config) {
-  if (!config?.enabled || !wallet || !account) return [];
+  if (!wallet || !account) return [];
+  // Explicit native requests are attempted even when Wallet Standard advertises
+  // only legacy/V0. Phantom, not a guessed app capability, decides acceptance.
+  if (isPhantomRequest(wallet)) return config?.phantomRequestEnabled === false ? [] : ['signTransaction'];
+  if (!config?.enabled) return [];
   const approved = config.walletMethods?.[wallet.name] || config.walletMethods?.['*'] || [];
   return supportedMethods(wallet, account).filter(method => approved.includes(method));
 }

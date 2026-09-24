@@ -8,7 +8,7 @@ import AtomicV1ImagePreview from './AtomicV1ImagePreview';
 import AtomicV1ImageLimitNotice from './AtomicV1ImageLimitNotice';
 import LaunchLinksFields from '@/components/launch/LaunchLinksFields';
 
-export default function AtomicV1Form({ state, allowFirstBuy = true, launchDisabled = false }) {
+export default function AtomicV1Form({ state, allowFirstBuy = true, launchDisabled = false, allowUnestimatedSubmit = false }) {
   const { input, setInput, file, setFile, size, sizing, busy, error, launch, links, setLink } = state;
   const set = (key, value) => setInput({ ...input, [key]: value });
   return <form onSubmit={launch} className="space-y-5">
@@ -21,6 +21,6 @@ export default function AtomicV1Form({ state, allowFirstBuy = true, launchDisabl
     <AtomicV1SizeMeter size={size} loading={sizing} hasFile={!!file} />
     {!sizing && !size && <AtomicV1ImageLimitNotice file={file} />}
     {file && <p className="font-mono text-[10px] text-muted-foreground">Selected raw file: {file.size.toLocaleString()} bytes</p>}{error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <Button type="submit" disabled={launchDisabled || busy || sizing || !size || size.remainingBytes < 0} className="gold-glow w-full rounded-full"><Rocket />{busy ? <><Loader2 className="animate-spin" />Launching and verifying…</> : 'Launch atomic V1 coin'}</Button>
+    <Button type="submit" disabled={launchDisabled || busy || (!allowUnestimatedSubmit && (sizing || !size || size.remainingBytes < 0))} className="gold-glow w-full rounded-full"><Rocket />{busy ? <><Loader2 className="animate-spin" />Launching and verifying...</> : 'Launch atomic V1 coin'}</Button>
   </form>;
 }

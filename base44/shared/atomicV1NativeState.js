@@ -3,7 +3,7 @@ import { base58Decode, equalBytes, fromBase64, invariant, sha256, utf8, verifyWi
 export const PUBLIC_FIELDS = ['id', 'requestId', 'walletAddress', 'coinMint', 'bondingCurve', 'name', 'symbol',
   'description', 'imageUrl', 'imageMime', 'imageByteLength', 'imageSha256', 'metadataUri', 'socials',
   'transactionSignature', 'transactionVersion', 'serializedTransactionBytes', 'firstBuyAmount', 'status',
-  'error', 'atomicV1Verified', 'nativeProtocol', 'checkedAt', 'lastValidBlockHeight', 'created_date'];
+  'error', 'atomicV1Verified', 'nativeProtocol', 'signingTransport', 'metadataAuthorized', 'checkedAt', 'lastValidBlockHeight', 'created_date'];
 export function publicLaunch(record) {
   return { ...Object.fromEntries(PUBLIC_FIELDS.filter(key => record[key] !== undefined).map(key => [key, record[key]])), createdDate: record.created_date };
 }
@@ -11,30 +11,27 @@ export function preparedLaunch(record) {
   return { id: record.id, requestId: record.requestId, coinMint: record.coinMint, walletAddress: record.walletAddress,
     messageBase64: record.messageBase64, messageHash: record.messageHash, signerAddresses: record.signerAddresses,
     lastValidBlockHeight: record.lastValidBlockHeight, blockhash: record.blockhash, signingMethod: record.signingMethod,
-    stateVersion: record.stateVersion, size: record.size, walletName: record.walletName };
+    signingTransport: record.signingTransport || 'wallet-standard', stateVersion: record.stateVersion, size: record.size, walletName: record.walletName };
 }
 export async function tokenHash(record, token) {
   invariant(typeof token === 'string' && /^[a-f0-9]{64}$/.test(token), 'A valid launch recovery token is required.');
   return sha256(utf8(`atomic-v1:2:${record.requestId}:${record.walletAddress}:${record.coinMint}:${token}`));
 }
-/** Conditional writes only. Never silently fall back to a read-then-update lock.
- * The deployed SDK/backend must support updateMany's query + $set contract.
- */
+/** Conditional writes only. Never silently fall back to a read-then-update lock. */
 export async function compareAndSet(entity, record, patch) {
-  invariant(typeof entity.updateMany === 'function', 'Atomic launch conditional writes are unavailable. Keep the feature disabled.');
+  invariant(typeof entity.updateMany === 'function', 'Atomic launch conditional writes are unavailable.');
   const result = await entity.updateMany({ id: record.id, stateVersion: record.stateVersion, messageHash: record.messageHash },
     { $set: { ...patch, stateVersion: record.stateVersion + 1 } });
   invariant(result.success === true && result.updated === 1 && result.has_more !== true, 'Launch state changed in another request. Reload the saved launch.');
   return { ...record, ...patch, stateVersion: record.stateVersion + 1 };
 }
-export function assertEnabled(config, walletName, signingMethod, firstBuy = '') {
-  invariant(config.enabled && (config.walletMethods?.[walletName] || config.walletMethods?.['*'] || []).includes(signingMethod), 'This wallet/method is not enabled for Atomic V1.');
+export function assertEnabled(config, walletName, signingMethod, firstBuy = '', signingTransport = 'wallet-standard') {
+  const direct = signingTransport === 'phantom-request' && walletName === 'Phantom' && signingMethod === 'signTransaction';
+  invariant(direct ? config.phantomRequestEnabled !== false : config.enabled &&
+    (config.walletMethods?.[walletName] || config.walletMethods?.['*'] || []).includes(signingMethod), 'This transaction route was explicitly disabled by the operator.');
   invariant(!firstBuy || config.firstBuyEnabled, 'Atomic first buys are not enabled yet.');
 }
 
-/** Dependency-injected state machine. No wallet secrets, global locks, or RPC
- * URLs are stored in records. Duplicate sends can only rebroadcast identical bytes.
- */
 export function createNativeState({ entity, rpc, codec, verifyFinalized, now = () => new Date().toISOString() }) {
   async function load(id, token) {
     invariant(typeof id === 'string' && id.length <= 100, 'Invalid launch id.');
@@ -99,7 +96,7 @@ export function createNativeState({ entity, rpc, codec, verifyFinalized, now = (
   }
   async function submit(id, token, encoded, config) {
     let record = await load(id, token);
-    assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount);
+    assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount, record.signingTransport);
     invariant(record.signingMethod === 'signTransaction', 'Wallet-broadcast launches must be reconciled, not server-submitted.');
     const wire = fromBase64(encoded), parsed = codec.decode(wire);
     invariant(equalBytes(parsed.message, fromBase64(record.messageBase64)), 'Signed message does not match its immutable preparation.');
@@ -118,15 +115,13 @@ export function createNativeState({ entity, rpc, codec, verifyFinalized, now = (
       invariant(signature === signed.transactionSignature, 'RPC returned an unexpected transaction signature.');
       return await change(record, { status: 'pending', error: '' });
     } catch {
-      // A timeout is not proof that nothing landed. A concurrent confirmer may
-      // already have advanced the record, so never overwrite it unconditionally.
       try { return await change(record, { status: 'unknown', error: 'Submission outcome is uncertain. Check or rebroadcast the saved bytes; do not start another launch.' }); }
       catch { return load(id, token); }
     }
   }
   async function arm(id, token, config) {
     let record = await load(id, token);
-    assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount);
+    assertEnabled(config, record.walletName, record.signingMethod, record.firstBuyAmount, record.signingTransport);
     invariant(record.signingMethod === 'signAndSendTransaction' && record.status === 'prepared', 'A wallet submission is already in progress. Reconcile it before trying again.');
     await fresh(record, 10);
     record = await change(record, { status: 'submitting', error: 'Wallet submission started; its outcome must be reconciled.' });
@@ -135,10 +130,12 @@ export function createNativeState({ entity, rpc, codec, verifyFinalized, now = (
   async function register(id, token, signature) {
     let record = await load(id, token);
     base58Decode(signature, 64);
-    invariant(record.signingMethod === 'signAndSendTransaction' && ['submitting', 'unknown', 'pending', 'confirmed'].includes(record.status), 'No wallet submission was armed.');
+    invariant(record.signingMethod === 'signAndSendTransaction', 'This launch was not submitted by a wallet.');
     invariant(!record.transactionSignature || record.transactionSignature === signature, 'This preparation already has a different signature.');
+    if (record.transactionSignature === signature && ['confirmed', 'failed', 'incomplete', 'expired'].includes(record.status)) return record;
+    invariant(['submitting', 'unknown', 'pending'].includes(record.status), 'No wallet submission was armed.');
     if (record.status !== 'confirmed' && !record.transactionSignature) record = await change(record, { transactionSignature: signature, status: 'pending', error: '' });
-    return reconcile(record); // The supplied ID alone never establishes success.
+    return reconcile(record);
   }
   return { load, change, fresh, reconcile, submit, arm, register };
 }

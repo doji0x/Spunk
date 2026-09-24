@@ -1,12 +1,10 @@
 name: Atomic V1 native signing checks
 on:
   pull_request:
-    paths:
-      - 'src/**'
-      - 'base44/**'
-      - 'tests/atomic-v1/**'
-      - 'package*.json'
-      - '.github/workflows/atomic-v1-checks.yml'
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
+  push:
+    branches: [main]
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', '.github/workflows/atomic-v1-checks.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +16,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/atomic-v1/native.test.mjs
+      - run: node --test tests/atomic-v1/*.test.mjs
+      - name: Archive tested tracked source
+        if: always()
+        run: git archive --format=tar HEAD src base44 tests docs package.json package-lock.json jsconfig.json eslint.config.js vite.config.js AGENTS.md README.md > tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-v1-tested-source
+          path: tested-source.tar
+          retention-days: 7
   sdk-roundtrip:
     runs-on: ubuntu-latest
     steps:
@@ -26,8 +33,15 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # Explicit dependency installation mode; no runtime network permission.
-      - run: deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+      - name: Test explicitly pinned SDK imports in isolation
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/atomic-v1-sdk"
+          cp -R base44 tests src "$RUNNER_TEMP/atomic-v1-sdk/"
+          cp tests/atomic-v1/sdk-package.json "$RUNNER_TEMP/atomic-v1-sdk/package.json"
+          cd "$RUNNER_TEMP/atomic-v1-sdk"
+          deno install --node-modules-dir=auto
+          deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
   application:
     runs-on: ubuntu-latest
     strategy:
@@ -37,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ matrix.revision == 'base' && (github.event.pull_request.base.sha || github.event.repository.default_branch) || github.sha }}
+          ref: ${{ matrix.revision == 'base' && (github.event.pull_request.base.sha || github.event.before || github.event.repository.default_branch) || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -47,5 +61,18 @@ jobs:
       - run: npm run build
       - if: always()
         run: npm run lint
-      - if: always()
-        run: npm run typecheck
+      - name: Public and admin submit-button regression tests
+        if: matrix.revision == 'head'
+        run: node --test tests/atomic-v1-ui/*.test.cjs
+      - name: Typecheck with retained diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-v1-typecheck-${{ matrix.revision }}
+          path: typecheck.txt
+          retention-days: 7
