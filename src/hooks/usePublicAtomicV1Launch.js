@@ -5,7 +5,8 @@ import { hasLaunchMintKey, launchMintKey, removeLaunchMintKey } from '@/lib/laun
 import { atomicV1Codec } from '@/lib/atomicV1Kit';
 import { signAtomicV1 } from '@/lib/atomicV1UserSign';
 import { isPhantomRequest } from '@/lib/atomicV1PhantomRequest';
-import { clearRecovery, newRecovery, readRecovery, writeRecovery } from '@/lib/atomicV1Recovery';
+import { clearRecovery, readRecovery, writeRecovery } from '@/lib/atomicV1Recovery';
+import { createLaunchSessionLoader } from '@/lib/atomicV1LaunchSession';
 import { invariant, sha256, solLamports, toBase64 } from '../../base44/shared/atomicV1Protocol.js';
 import { preparationAuthorizationBytes } from '../../base44/shared/atomicV1Authorization.js';
 
@@ -19,9 +20,11 @@ export default function usePublicAtomicV1Launch() {
   const [file, setFile] = useState(null), [imageBase64, setImageBase64] = useState('');
   const [size, setSize] = useState(null), [sizing, setSizing] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [failure, setFailure] = useState(null), [result, setResult] = useState(null), [stage, setStage] = useState('');
-  const sessionRef = useRef(null), activeAddress = useRef(wallet.address), lock = useRef(false), sizeRevision = useRef(0);
+  const sessionRef = useRef(null), lock = useRef(false), sizeRevision = useRef(0);
+  const sessionLoader = useRef(null), hydrationRevision = useRef(0);
+  if (!sessionLoader.current) sessionLoader.current = createLaunchSessionLoader(localStorage, launchMintKey);
   const stageRef = useRef(''), mounted = useRef(true), pollingCount = useRef({ key: '', count: 0 });
-  activeAddress.current = wallet.address;
+  const isActive = address => mounted.current && wallet.capture().account?.address === address;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   function progress(text) { stageRef.current = text; if (mounted.current) setStage(text); }
   function report(reason) {
@@ -33,30 +36,37 @@ export default function usePublicAtomicV1Launch() {
   }
   function persist(saved) {
     writeRecovery(localStorage, saved);
-    if (mounted.current && activeAddress.current === saved.walletAddress) { sessionRef.current = saved; setSession(saved); }
+    if (isActive(saved.walletAddress)) { sessionRef.current = saved; setSession(saved); }
     return saved;
   }
+  function adoptSession(saved, restorePrepared = true) {
+    if (!isActive(saved.walletAddress)) return;
+    sessionRef.current = saved; setSession(saved); setResult(saved.launch || null); setSize(saved.prepared?.size || null);
+    // A new connection must not erase a File or details entered before Connect.
+    // Frozen recovery is different: present its original details before approval.
+    if (restorePrepared && saved.preparationRequested) {
+      setInput(saved.input || initial); setLinks(saved.socials || emptyLinks);
+      setImageBase64(saved.imageBase64 || ''); setFile(null);
+    }
+  }
   async function initialize(address) {
-    let saved;
-    try {
-      saved = readRecovery(localStorage, address);
-    } catch {
-      clearRecovery(localStorage, address);
-    }
-    if (!saved) { saved = newRecovery(address); writeRecovery(localStorage, saved); }
-    if (!saved.coinMint) {
-      invariant(!saved.preparationRequested, 'The saved launch mint is missing. Preserve the recovery data.');
-      const mint = await launchMintKey(saved.requestId);
-      saved = { ...saved, coinMint: mint.address }; writeRecovery(localStorage, saved);
-    }
-    if (!mounted.current || activeAddress.current !== address) return;
-    sessionRef.current = saved; setSession(saved); setInput(saved.input || initial); setLinks(saved.socials || emptyLinks);
-    setResult(saved.launch || null); setImageBase64(saved.imageBase64 || ''); setSize(saved.prepared?.size || null); setFile(null);
+    const revision = ++hydrationRevision.current;
+    const saved = await sessionLoader.current(address);
+    if (revision === hydrationRevision.current && !lock.current) adoptSession(saved);
+    return saved;
   }
   useEffect(() => {
-    sessionRef.current = null; setSession(null); setResult(null); setSize(null); setError(''); setFailure(null);
-    if (wallet.address) initialize(wallet.address).catch(reason => report(reason));
-  }, [wallet.address]);
+    if (lock.current) return; // Submit owns initialization during connect -> prepare -> sign.
+    if (sessionRef.current?.walletAddress === wallet.address) return;
+    sessionRef.current = null; setSession(null); setResult(null); setSize(null);
+    const revision = ++hydrationRevision.current;
+    if (wallet.address) {
+      sessionLoader.current(wallet.address).then(saved => {
+        if (revision === hydrationRevision.current && !lock.current) adoptSession(saved);
+      }).catch(reason => { if (revision === hydrationRevision.current && isActive(wallet.address)) report(reason); });
+    }
+    return () => { hydrationRevision.current++; };
+  }, [wallet.address, busy]);
   useEffect(() => {
     let cancelled = false;
     if (!file) { if (!sessionRef.current?.preparationRequested) setImageBase64(''); return undefined; }
@@ -68,7 +78,7 @@ export default function usePublicAtomicV1Launch() {
   }, [file]);
   useEffect(() => {
     const revision = ++sizeRevision.current;
-    if (session?.preparationRequested) return undefined;
+    if (busy || session?.preparationRequested) return undefined;
     setSize(null);
     if (!wallet.method || !imageBase64 || !input.name || !input.symbol || !session?.coinMint) return undefined;
     const timer = setTimeout(async () => {
@@ -83,32 +93,43 @@ export default function usePublicAtomicV1Launch() {
       } finally { if (revision === sizeRevision.current) setSizing(false); }
     }, 450);
     return () => { clearTimeout(timer); sizeRevision.current++; setSizing(false); };
-  }, [input, imageBase64, wallet.address, wallet.method, wallet.nativeRequest, session?.coinMint, session?.preparationRequested]);
-  async function guarded(task) {
+  }, [input, imageBase64, wallet.address, wallet.method, wallet.nativeRequest, session?.coinMint, session?.preparationRequested, busy]);
+  async function guarded(task, connectForLaunch = false) {
     if (lock.current) return;
-    lock.current = true; setBusy(true); setError(''); setFailure(null);
+    lock.current = true; hydrationRevision.current++; setBusy(true); setError(''); setFailure(null);
     try {
-      if (globalThis.navigator?.locks && wallet.address) {
-        await navigator.locks.request(`spunk:atomic-v1:${wallet.address}`, { ifAvailable: true }, async lease => {
+      // Invoke connect on the click stack, BEFORE a Web Lock callback, RPC, or
+      // file read. Use the resolved snapshot, not the pre-connect React closure.
+      if (connectForLaunch) progress('Connecting to Phantom for this launch.');
+      const snapshot = connectForLaunch ? await wallet.ensureLaunchWallet() : wallet.capture();
+      const address = snapshot.account?.address;
+      const run = async () => {
+        if (connectForLaunch) invariant(snapshot.isCurrent(), 'The connected wallet changed before preparation.');
+        const saved = address ? readRecovery(localStorage, address) : null;
+        const current = sessionRef.current;
+        if (saved && current?.walletAddress === address) {
+          invariant(saved.requestId === current.requestId, 'Another tab changed the saved launch. Reload its recovery record.');
+          sessionRef.current = saved;
+        }
+        await task(snapshot);
+      };
+      if (globalThis.navigator?.locks && address) {
+        await navigator.locks.request(`spunk:atomic-v1:${address}`, { ifAvailable: true }, async lease => {
           invariant(lease, 'This wallet already has an atomic launch action open in another tab. Return to that tab.');
-          const saved = readRecovery(localStorage, wallet.address);
-          if (saved && sessionRef.current && saved.requestId === sessionRef.current.requestId) sessionRef.current = saved;
-          else invariant(!saved || !sessionRef.current || saved.requestId === sessionRef.current.requestId,
-            'Another tab replaced the saved draft. Reload before requesting approval.');
-          await task();
+          await run();
         });
-      } else await task();
+      } else await run();
     } catch (reason) { if (mounted.current) report(reason); }
     finally { lock.current = false; if (mounted.current) { setBusy(false); setStage(''); } }
   }
   function auth(saved, action) { return { action, id: saved.id, submitToken: saved.submitToken }; }
   function receive(saved, data) {
     const next = persist({ ...saved, id: data.launch?.id || saved.id, prepared: data.prepared || saved.prepared, launch: data.launch || saved.launch });
-    if (activeAddress.current === next.walletAddress && mounted.current) { setResult(data.launch || null); setSize(data.size || next.prepared?.size || null); }
+    if (isActive(next.walletAddress)) { setResult(data.launch || null); setSize(data.size || next.prepared?.size || null); }
     if (data.launch?.status === 'confirmed' && data.launch.atomicV1Verified) {
       removeLaunchMintKey(next.requestId); clearRecovery(localStorage, next.walletAddress);
       const completed = { ...next, completed: true, submitToken: '', signedTransactionBase64: '' };
-      if (activeAddress.current === next.walletAddress && mounted.current) { sessionRef.current = completed; setSession(completed); }
+      if (isActive(next.walletAddress)) { sessionRef.current = completed; setSession(completed); }
       return completed;
     }
     return next;
@@ -177,27 +198,40 @@ export default function usePublicAtomicV1Launch() {
   }
   async function launch(event) {
     event?.preventDefault();
-    return guarded(async () => {
-      const snapshot = wallet.capture();
-      invariant(wallet.canLaunch && sessionRef.current, 'Connect Phantom using the native request button.');
-      let saved = sessionRef.current;
+    // Capture the user's submitted intent before connecting can re-render the form.
+    const submitted = { input: { ...input }, links: { ...links }, file };
+    const displayed = sessionRef.current;
+    return guarded(async snapshot => {
+      const address = snapshot.account.address;
+      invariant(!displayed?.preparationRequested || displayed.walletAddress === address,
+        'This saved launch belongs to a different wallet. Reconnect its original payer.');
+      let saved = await sessionLoader.current(address);
+      invariant(snapshot.isCurrent(), 'The wallet changed while initializing the launch.');
+      adoptSession(saved, false);
+      // Do not silently sign an undisplayed old preparation instead of the form.
+      if (saved.preparationRequested && displayed?.requestId !== saved.requestId) {
+        adoptSession(saved); return;
+      }
       if (!saved.preparationRequested) {
-        invariant(file && file.size > 0 && file.size <= 7500, 'Select a complete image of 7,500 bytes or less.');
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const normalized = { name: input.name.trim(), symbol: input.symbol.trim().toUpperCase(), description: input.description.trim(),
-          firstBuyAmount: solLamports(input.firstBuyAmount) === 0n ? '' : input.firstBuyAmount };
-        saved = persist({ ...saved, input: normalized, socials: links, imageBase64: toBase64(bytes), imageSha256: await sha256(bytes), imageByteLength: bytes.length,
+        const selectedFile = submitted.file;
+        invariant(selectedFile && selectedFile.size > 0 && selectedFile.size <= 7500, 'Select a complete image of 7,500 bytes or less.');
+        const bytes = new Uint8Array(await selectedFile.arrayBuffer());
+        invariant(snapshot.isCurrent(), 'The wallet changed while reading the image.');
+        const normalized = { name: submitted.input.name.trim(), symbol: submitted.input.symbol.trim().toUpperCase(),
+          description: submitted.input.description.trim(),
+          firstBuyAmount: solLamports(submitted.input.firstBuyAmount) === 0n ? '' : submitted.input.firstBuyAmount };
+        saved = persist({ ...saved, input: normalized, socials: submitted.links, imageBase64: toBase64(bytes), imageSha256: await sha256(bytes), imageByteLength: bytes.length,
           walletName: snapshot.wallet.name, signingMethod: snapshot.method,
           signingTransport: isPhantomRequest(snapshot.wallet) ? 'phantom-request' : 'wallet-standard' });
         progress('Uploading the exact image for metadata.');
         const core = /** @type {{UploadPublicFile?: (args: {file: File}) => Promise<{file_url: string}>}} */ (base44.integrations.Core);
         invariant(typeof core.UploadPublicFile === 'function', 'The Base44 public file-upload integration is unavailable.');
-        const uploaded = await core.UploadPublicFile({ file });
+        const uploaded = await core.UploadPublicFile({ file: selectedFile });
         invariant(snapshot.isCurrent(), 'Wallet changed before preparation.');
         saved = persist({ ...saved, imageUrl: uploaded.file_url, preparationRequested: true });
       }
       await continueSaved(saved, snapshot);
-    });
+    }, true);
   }
   const check = () => guarded(async () => {
     const saved = sessionRef.current;
@@ -216,7 +250,7 @@ export default function usePublicAtomicV1Launch() {
       pollingCount.current.count++;
       try {
         const data = await status(saved);
-        if (!cancelled && activeAddress.current === saved.walletAddress) receive(saved, data);
+        if (!cancelled && isActive(saved.walletAddress)) receive(saved, data);
       } catch { /* A transient read failure is not a failed transaction. */ }
       if (!cancelled && pollingCount.current.count < 40) timer = setTimeout(poll, 3000);
     };
@@ -238,7 +272,7 @@ export default function usePublicAtomicV1Launch() {
       'Keep the recovery record until the submitted transaction is resolved.');
     removeLaunchMintKey(saved.requestId); clearRecovery(localStorage, saved.walletAddress);
     setFile(null); setInput(initial); setLinks(emptyLinks); setImageBase64(''); setResult(null); setSize(null);
-    await initialize(saved.walletAddress);
+    adoptSession(await initialize(saved.walletAddress));
   });
   return { wallet, session, input, setInput, file, setFile, size, sizing, busy, error, failure, result, stage, launch, check, refresh, retry, reset,
     links, setLink: (key, value) => setLinks(current => ({ ...current, [key]: value })) };
