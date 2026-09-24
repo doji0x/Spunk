@@ -1,19 +1,10 @@
 name: Atomic V1 native signing checks
 on:
   pull_request:
-    paths:
-      - 'src/**'
-      - 'base44/**'
-      - 'tests/atomic-v1/**'
-      - 'package*.json'
-      - '.github/workflows/atomic-v1-checks.yml'
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'base44/**'
-      - 'tests/atomic-v1/**'
-      - '.github/workflows/atomic-v1-checks.yml'
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', '.github/workflows/atomic-v1-checks.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +17,15 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tests/atomic-v1/*.test.mjs
+      - name: Archive tested tracked source (no credentials or environment files)
+        if: always()
+        run: git archive --format=tar HEAD src base44 tests docs package.json package-lock.json jsconfig.json eslint.config.js vite.config.js AGENTS.md README.md > tested-source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-v1-tested-source
+          path: tested-source.tar
+          retention-days: 7
   sdk-roundtrip:
     runs-on: ubuntu-latest
     steps:
