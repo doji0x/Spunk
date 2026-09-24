@@ -1,6 +1,7 @@
 import { MAINNET, base58Decode, base58Encode, equalBytes, fromBase64, inspectMessage,
   invariant, sha256, toBase64, verifySignature, verifyWire } from '../../base44/shared/atomicV1Protocol.js';
 import { validateIntent } from '../../base44/shared/atomicV1Intent.js';
+import { EXACT_MESSAGE_MODE, requestPhantomExactMessage } from './atomicV1ExactMessage.js';
 import { supportedMethods } from './atomicV1WalletRegistry.js';
 import { isPhantomRequest, phantomAddress, requestPhantomV1 } from './atomicV1PhantomRequest.js';
 
@@ -14,14 +15,16 @@ function currentAccount(wallet, account, isCurrent) {
   invariant(current?.chains?.includes(MAINNET) && equalBytes(base58Decode(account.address), account.publicKey), 'The selected mainnet account is no longer connected.');
   return current;
 }
-/** Real transaction signing only. No transaction is disguised as a message or
- * another transaction version. The injected Phantom request is not blocked by
- * an absent Wallet Standard capability; the wallet must decide V1 acceptance.
+/** Native signing is the default. The explicit experimental exact-message mode
+ * requires its own transaction-authorization review and never acts as fallback.
  */
 export async function signAtomicV1({ wallet, account, prepared, mint, intent, codec, isCurrent,
-  assertFresh, beforeWalletSend, persistSigned, onStage = (_text) => {} }) {
+  assertFresh, beforeWalletSend, persistSigned, signingMode = 'native', authorizeMessage = null, onStage = (_text) => {} }) {
   invariant(typeof isCurrent === 'function' && typeof assertFresh === 'function' && codec && intent, 'Missing signing safeguards.');
   const method = prepared.signingMethod, direct = isPhantomRequest(wallet);
+  invariant(['native', EXACT_MESSAGE_MODE].includes(signingMode), 'Unknown signing mode.');
+  const exact = signingMode === EXACT_MESSAGE_MODE;
+  invariant(!exact || (direct && method === 'signTransaction'), 'Experimental message signing requires the explicit Phantom sign-only route.');
   invariant(supportedMethods(wallet, account).includes(method), 'The selected native transaction API is unavailable.');
   currentAccount(wallet, account, isCurrent);
   onStage('Validating the exact coin, image, payer and mint.');
@@ -39,9 +42,12 @@ export async function signAtomicV1({ wallet, account, prepared, mint, intent, co
   const signingAccount = currentAccount(wallet, account, isCurrent);
   if (method === 'signTransaction') {
     invariant(typeof persistSigned === 'function', 'Durable signed-transaction recovery is required.');
-    onStage(direct ? 'Requesting Phantom signTransaction approval (native request).' : 'Requesting native transaction approval.');
+    onStage(exact ? 'Review the experimental transaction authorization before opening Phantom.' : direct ? 'Requesting Phantom signTransaction approval (native request).' : 'Requesting native transaction approval.');
     let signed;
-    if (direct) {
+    if (exact) {
+      signed = await requestPhantomExactMessage({ provider: wallet.provider, message, mintAddress: mint.address, mintSignature,
+        payerAddress: account.address, codec, isCurrent, intent, prepared, assertFresh, authorize: authorizeMessage });
+    } else if (direct) {
       signed = await requestPhantomV1({ provider: wallet.provider, message, mintAddress: mint.address, mintSignature,
         payerAddress: account.address, codec, isCurrent });
     } else {

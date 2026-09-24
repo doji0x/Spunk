@@ -1,6 +1,6 @@
 import { base58Decode, invariant, MAINNET } from '../../base44/shared/atomicV1Protocol.js';
 import { phantomAddress } from './atomicV1PhantomRequest.js';
-import atomicV1Timeout from '@/lib/atomicV1Timeout';
+import atomicV1Timeout from './atomicV1Timeout.js';
 
 export function phantomAccount(provider) {
   const address = phantomAddress(provider);

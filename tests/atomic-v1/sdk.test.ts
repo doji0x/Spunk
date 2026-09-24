@@ -11,6 +11,7 @@ import { atomicV1Codec } from '../../base44/shared/atomicV1Kit.ts';
 import { buildUnsignedAtomicV1 } from '../../base44/shared/atomicV1NativeBuilder.ts';
 import { WSOL, equalBytes, fromBase64, inspectMessage, metadataUriFor, sha256, verifyWire } from '../../base44/shared/atomicV1Protocol.js';
 import { BUY, validateIntent } from '../../base44/shared/atomicV1Intent.js';
+import { requestPhantomExactMessage } from '../../src/lib/atomicV1ExactMessage.js';
 import { requestPhantomV1 } from '../../src/lib/atomicV1PhantomRequest.js';
 import { createV1WalletTransaction } from '../../src/lib/atomicV1WalletTransaction.js';
 import { fixture } from './fixtures.mjs';
@@ -78,6 +79,19 @@ for (const firstBuy of [false, true]) Deno.test(`actual Pump ${firstBuy ? 'creat
   assert.equal(calls, 1); assert.ok(signed.length > 1232 && signed.length <= 4096);
   assert.equal(signed.length, prepared.size.finalSerializedTransactionBytes);
   await verifyWire(signed);
+  let messageCalls = 0;
+  const messageProvider = { isPhantom: true, isConnected: true, publicKey: payer.publicKey,
+    signMessage: async (bytes, display) => {
+      messageCalls++; assert.equal(display, 'hex'); assert.deepEqual(bytes, message);
+      return { signature: nacl.sign.detached(bytes, payer.secretKey), publicKey: payer.publicKey };
+    } };
+  const exactWire = await requestPhantomExactMessage({ provider: messageProvider, message, mintAddress: coinMint,
+    mintSignature, payerAddress: walletAddress, intent: input, prepared, codec: atomicV1Codec,
+    isCurrent: () => true, assertFresh: async () => {}, authorize: async review => {
+      assert.equal(review.name, input.name); assert.equal(review.firstBuySol, input.firstBuyAmount || '0');
+      assert.equal(review.transactionBytes, signed.length); return review.messageHash;
+    } });
+  assert.equal(messageCalls, 1); assert.deepEqual(exactWire, signed); await verifyWire(exactWire);
   const decoded = atomicV1Codec.decode(signed);
   assert.deepEqual(decoded.message, message); assert.deepEqual(decoded.signatures[coinMint], new Uint8Array(mintSignature));
 });
