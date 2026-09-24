@@ -1,0 +1,11 @@
+{
+  "name": "atomic-v1-react-flow-tests",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-test-renderer": "18.3.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,10 +1,10 @@
 name: Atomic V1 native signing checks
 on:
   pull_request:
-    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', 'tests/atomic-v1-react/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
   push:
     branches: [main]
-    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', '.github/workflows/atomic-v1-checks.yml']
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', 'tests/atomic-v1-react/**', '.github/workflows/atomic-v1-checks.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,23 @@ jobs:
           name: atomic-v1-tested-source
           path: tested-source.tar
           retention-days: 7
+  react-launch-flow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise the real React page, provider and hook in isolation
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/atomic-v1-react"
+          cp -R src base44 tests "$RUNNER_TEMP/atomic-v1-react/"
+          cp .npmrc "$RUNNER_TEMP/atomic-v1-react/"
+          cd "$RUNNER_TEMP/atomic-v1-react"
+          printf '{"type":"module"}\n' > package.json
+          npm install --prefix tests/atomic-v1-react --ignore-scripts --no-audit --no-fund
+          node --test tests/atomic-v1-react/*.test.cjs
   sdk-roundtrip:
     runs-on: ubuntu-latest
     steps:
