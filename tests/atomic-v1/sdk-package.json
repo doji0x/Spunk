@@ -1,0 +1,8 @@
+{
+  "name": "atomic-v1-sdk-tests",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pump-fun/pump-sdk": "2.0.0"
+  }
+}

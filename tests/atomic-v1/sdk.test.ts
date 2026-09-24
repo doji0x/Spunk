@@ -1,16 +1,19 @@
-// Real SDK/Kit integration, no wallet extension, RPC, secrets, or broadcasts.
-// deno test --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+// Real SDK/Kit integration. No RPC, secrets, wallet extension or broadcasts.
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { deflateSync } from 'node:zlib';
+import { createRequire } from 'node:module';
 import { Keypair } from 'npm:@solana/web3.js@1.98.4';
-import { PUMP_SDK } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import nacl from 'npm:tweetnacl@1.0.3';
 import { atomicV1Codec } from '../../base44/shared/atomicV1Kit.ts';
 import { buildUnsignedAtomicV1 } from '../../base44/shared/atomicV1NativeBuilder.ts';
 import { fromBase64, inspectMessage, metadataUriFor, sha256, verifyWire } from '../../base44/shared/atomicV1Protocol.js';
 import { validateIntent } from '../../base44/shared/atomicV1Intent.js';
 import { readFileSync } from 'node:fs';
+// Load the package's published require entrypoint to avoid Deno's named-export
+// inference failure on Anchor's CommonJS BN re-export. No SDK code is replaced.
+const require = createRequire(import.meta.url);
+const { PUMP_SDK } = require('@pump-fun/pump-sdk');
 
 function png16() {
   const chunk = (type, bytes) => {

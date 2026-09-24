@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tests/atomic-v1/*.test.mjs
-      - name: Archive tested tracked source (no credentials or environment files)
+      - name: Archive tested tracked source
         if: always()
         run: git archive --format=tar HEAD src base44 tests docs package.json package-lock.json jsconfig.json eslint.config.js vite.config.js AGENTS.md README.md > tested-source.tar
       - uses: actions/upload-artifact@v4
@@ -38,8 +38,16 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/atomic-v1-sdk"
           cp -R base44 tests "$RUNNER_TEMP/atomic-v1-sdk/"
+          cp tests/atomic-v1/sdk-package.json "$RUNNER_TEMP/atomic-v1-sdk/package.json"
           cd "$RUNNER_TEMP/atomic-v1-sdk"
+          deno install --node-modules-dir=auto
           deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+      - name: Report SDK entrypoints on failure
+        if: failure()
+        shell: bash
+        run: |
+          find "$RUNNER_TEMP/atomic-v1-sdk/node_modules/.deno" -path '*/node_modules/@pump-fun/pump-sdk/package.json' -exec cat {} \;
+          find "$RUNNER_TEMP/atomic-v1-sdk/node_modules/.deno" -path '*/node_modules/@pump-fun/agent-payments-sdk/package.json' -exec cat {} \;
   application:
     runs-on: ubuntu-latest
     strategy:
