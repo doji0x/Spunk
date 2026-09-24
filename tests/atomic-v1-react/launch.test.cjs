@@ -1,6 +1,6 @@
 // Real React 18 provider, page, form, hook, signing and recovery modules.
-// Only network, mint-key storage and presentational children are test doubles.
-// No runtime network calls or real wallet/fund access are permitted in these tests.
+// Network, provider, mint storage and presentational children are test doubles.
+// No runtime network calls or real wallet/fund access are permitted.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -17,7 +17,7 @@ function storage() { const data = new Map(); return { getItem: k => data.get(k) 
 
 async function harness(options = {}) {
   const { fixture, key } = await import('../atomic-v1/fixtures.mjs');
-  const { base58Encode, fromBase64, verifyWire, toBase64 } = await import(protocolPath);
+  const { fromBase64, verifyWire, toBase64 } = await import(protocolPath);
   const f = await fixture(200), trace = [], minted = new Map();
   const provider = new EventEmitter(); let connects = 0, signatures = 0, uploads = 0, preparations = 0, submits = 0, mintRequests = 0;
   Object.assign(provider, { isPhantom: true, isConnected: Boolean(options.connected), publicKey: options.connected ? f.payer.address : null });
@@ -29,13 +29,17 @@ async function harness(options = {}) {
     provider.emit('connect', provider.publicKey); return { publicKey: provider.publicKey };
   };
   provider.disconnect = async () => { provider.isConnected = false; provider.publicKey = null; provider.emit('disconnect'); };
-  provider.request = async request => {
-    trace.push(request.method); signatures++;
-    assert.equal(request.method, 'signTransaction');
-    assert.equal(request.params.message, base58Encode(f.message));
+  provider.request = async () => { throw new Error('Do not use the legacy raw-message request for transaction approval'); };
+  provider.signTransaction = async transaction => {
+    trace.push('signTransaction'); signatures++;
+    assert.equal(transaction.version, 1);
+    assert.deepEqual(transaction.message.serialize(), f.message);
+    assert.equal(transaction.serialize().length, f.message.length + 128);
+    assert.deepEqual(transaction.signatures[1], f.mint.sign(f.message));
     if (options.signatureGate) await options.signatureGate.promise;
     if (options.signatureError) throw options.signatureError;
-    return { publicKey: f.payer.address, signature: base58Encode(f.payer.sign(f.message)) };
+    transaction.signatures[0] = f.payer.sign(f.message);
+    return transaction;
   };
   const local = storage();
   const win = new EventTarget(); win.phantom = { solana: provider };
@@ -137,7 +141,7 @@ async function harness(options = {}) {
   };
 }
 
-test('actual Launch button connects, awaits session, signs and submits on its first click', async () => {
+test('actual Launch connects, awaits session, requests a full V1 signature and submits once', async () => {
   const h = await harness();
   try {
     await h.fill(); assert.equal(h.state().wallet.address, ''); assert.equal(h.state().session, null);
@@ -152,12 +156,12 @@ test('actual Launch button connects, awaits session, signs and submits on its fi
     assert.equal(h.state().input.name, 'Test'); assert.equal(h.state().file.name, 'selected.png');
   } finally { await h.close(); }
 });
-test('already-connected Phantom is adopted without requiring the separate Connect button', async () => {
+test('already-connected Phantom is adopted without the separate Connect button', async () => {
   const h = await harness({ connected: true });
   try { await h.fill(); await act(async () => h.submit()); assert.equal(h.state().error, ''); assert.equal(h.counts().connects, 0); assert.equal(h.counts().signatures, 1); }
   finally { await h.close(); }
 });
-test('a deferred connection and React rerender preserve the selected File and all form fields', async () => {
+test('a deferred connection and React rerender preserve File and form fields', async () => {
   const gate = deferred(), h = await harness({ connectGate: gate }); let task;
   try {
     await h.fill(); await act(async () => { task = h.submit(); });
@@ -169,14 +173,14 @@ test('a deferred connection and React rerender preserve the selected File and al
     assert.equal(h.state().links.website, 'https://example.com');
   } finally { gate.resolve(); await task; await h.close(); }
 });
-test('two submit events during connection produce one approval request and one submission', async () => {
+test('two submit events during connection produce one signature request', async () => {
   const gate = deferred(), h = await harness({ connectGate: gate }); let task;
   try { await h.fill(); await act(async () => { task = h.submit(); await h.submit(); });
     assert.equal(h.counts().connects, 1); await act(async () => { gate.resolve(); await task; });
     assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 1);
   } finally { gate.resolve(); await task; await h.close(); }
 });
-test('Launch awaits in-progress automatic session initialization instead of a session-ready gate', async () => {
+test('Launch awaits in-progress session initialization rather than a readiness gate', async () => {
   const gate = deferred(), h = await harness({ mintGate: gate }); let task;
   try {
     await h.fill(); await act(async () => h.state().wallet.connect());
@@ -186,7 +190,7 @@ test('Launch awaits in-progress automatic session initialization instead of a se
     assert.equal(h.state().error, ''); assert.equal(h.counts().mintRequests, 3); assert.equal(h.counts().signatures, 1);
   } finally { gate.resolve(); await task; await h.close(); }
 });
-test('connection rejection retains Phantom code and does not upload, prepare or sign', async () => {
+test('connection rejection retains Phantom code and does not upload or sign', async () => {
   const h = await harness({ connectError: { code: 4001, message: 'User rejected connection.' } });
   try { await h.fill(); await act(async () => h.submit());
     assert.equal(h.state().failure.source, 'Phantom'); assert.equal(h.state().failure.stage, 'wallet-connection');
@@ -194,36 +198,37 @@ test('connection rejection retains Phantom code and does not upload, prepare or 
     assert.equal(h.counts().uploads, 0); assert.equal(h.counts().preparations, 0); assert.equal(h.counts().signatures, 0);
   } finally { await h.close(); }
 });
-test('signing rejection reaches native Phantom, retains its response and never submits', async () => {
-  const h = await harness({ signatureError: { code: -32603, message: 'Transaction version not supported' } });
+test('wallet decoder rejection comes from the signing method and never submits', async () => {
+  const h = await harness({ signatureError: { code: -32603, message: 'Reached end of buffer unexpectedly' } });
   try { await h.fill(); await act(async () => h.submit());
     assert.equal(h.state().failure.source, 'Phantom'); assert.equal(h.state().failure.stage, 'wallet-signing');
-    assert.equal(h.state().failure.code, -32603); assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 0);
+    assert.equal(h.state().failure.code, -32603); assert.equal(h.state().error, 'Reached end of buffer unexpectedly');
+    assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 0);
   } finally { await h.close(); }
 });
-test('an account change during upload prevents signing the old payer intent', async () => {
+test('an account change during upload prevents signing old payer intent', async () => {
   const h = await harness({ onUpload(provider) { provider.publicKey = '11111111111111111111111111111111'; provider.emit('accountChanged', provider.publicKey); } });
   try { await h.fill(); await act(async () => h.submit()); assert.match(h.state().error, /Wallet changed/); assert.equal(h.counts().signatures, 0); assert.equal(h.counts().preparations, 0); }
   finally { await h.close(); }
 });
-test('a duplicate same-account event does not invalidate the current launch', async () => {
+test('a duplicate same-account event does not invalidate the launch', async () => {
   const h = await harness({ onUpload(provider) { provider.emit('accountChanged', provider.publicKey); } });
   try { await h.fill(); await act(async () => h.submit()); assert.equal(h.state().error, ''); assert.equal(h.counts().signatures, 1); }
   finally { await h.close(); }
 });
-test('provider availability or page rendering alone never signs a transaction', async () => {
+test('rendering or connecting alone never requests a transaction signature', async () => {
   const h = await harness({ connected: true });
   try { await h.fill(); await act(async () => h.state().wallet.connect()); assert.equal(h.counts().signatures, 0); assert.equal(h.counts().preparations, 0); }
   finally { await h.close(); }
 });
-test('corrupt recovery remains intact and is not replaced with another mint', async () => {
+test('corrupt recovery remains intact instead of generating another mint', async () => {
   const h = await harness();
   try { await h.fill(); const key = `validate:atomic-v1:recovery:2:${h.f.payer.address}`; h.local.setItem(key, '{corrupt');
     await act(async () => h.submit()); assert.match(h.state().error, /damaged/);
     assert.equal(h.local.getItem(key), '{corrupt'); assert.equal(h.counts().mintRequests, 0); assert.equal(h.counts().signatures, 0);
   } finally { await h.close(); }
 });
-test('an explicit operator disable is preserved, not bypassed by automatic connection', async () => {
+test('explicit operator disable is preserved', async () => {
   const h = await harness({ disabled: true });
   try { await h.fill(); await act(async () => h.submit()); assert.match(h.state().error, /explicitly disabled/); assert.equal(h.counts().connects, 0); assert.equal(h.counts().signatures, 0); }
   finally { await h.close(); }

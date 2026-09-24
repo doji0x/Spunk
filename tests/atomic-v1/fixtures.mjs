@@ -3,10 +3,9 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { ATA, MAINNET, NOOP, PUMP, SYSTEM, TOKEN_2022, base58Decode, base58Encode, commitmentPayload,
   inspectMessage, inspectWire, metadataUriFor, sha256, toBase64, utf8 } from '../../base44/shared/atomicV1Protocol.js';
 import { CREATE } from '../../base44/shared/atomicV1Intent.js';
+import { createV1WalletTransaction } from '../../src/lib/atomicV1WalletTransaction.js';
 export const cat = (...parts) => Uint8Array.from(parts.flatMap(p => [...p]));
 export function key() {
-  // Independent boundary fixtures must have equal URI lengths. Both 43- and
-  // 44-character public keys are valid; only test fixtures select a fixed width.
   for (let attempt = 0; attempt < 100; attempt++) {
     const pair = generateKeyPairSync('ed25519');
     const publicKey = new Uint8Array(pair.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32));
@@ -28,6 +27,24 @@ export function encodeMessage({ payer, mint, instructions, blockhash }) {
   const payloads = instructions.map(ix => cat(Uint8Array.from(ix.accounts.map(a => addresses.indexOf(a))), ix.data));
   return cat(header, ...addresses.map(a => base58Decode(a)), config, ...heads, ...payloads);
 }
+// Test double for the read-only web3.js V1 object. The separate Deno SDK suite
+// uses the REAL VersionedTransaction decoder and real Kit encoder instead.
+class FixtureVersionedTransaction {
+  get version() { return this.message.version; }
+  static deserialize(wire) {
+    const p = inspectWire(wire), tx = new FixtureVersionedTransaction();
+    tx.message = { version: 1, addressTableLookups: [],
+      header: { numRequiredSignatures: p.signers.length, numReadonlySignedAccounts: p.message[2], numReadonlyUnsignedAccounts: p.message[3] },
+      recentBlockhash: p.blockhash, staticAccountKeys: p.addresses.map(a => ({ toBase58: () => a })),
+      compiledInstructions: p.instructions.map(ix => ({ programIdIndex: p.addresses.indexOf(ix.programAddress), accountKeyIndexes: ix.indexes, data: new Uint8Array(ix.data) })),
+      transactionConfig: { priorityFee: Number(p.config.priorityFeeLamports), computeUnitLimit: p.config.computeUnitLimit,
+        loadedAccountsDataSizeLimit: p.config.loadedAccountsDataSizeLimit, heapSize: p.config.heapSize },
+      serialize() { throw new Error('Serialization of version 1 transaction messages is not supported'); },
+    };
+    tx.signatures = p.signers.map(a => new Uint8Array(p.signatures[a]));
+    return tx;
+  }
+}
 export async function fixture(imageSize = 1400) {
   const payer = key(), mint = key();
   const derived = Object.fromEntries(['bondingCurve', 'mintAuthority', 'global', 'eventAuthority', 'creatorVault', 'baseUserAta', 'baseCurveAta'].map(n => [n, key().address]));
@@ -45,6 +62,7 @@ export async function fixture(imageSize = 1400) {
     encode(bytes, signatures = {}) { const parsed = inspectMessage(bytes); return cat(bytes, ...parsed.signers.map(a => signatures[a] || new Uint8Array(64))); },
     decode: inspectWire, derive: async () => derived,
   };
+  codec.toWalletTransaction = wire => createV1WalletTransaction(FixtureVersionedTransaction, codec, wire);
   const prepared = { messageBase64: toBase64(message), messageHash: await sha256(message), coinMint: mint.address,
     signerAddresses: [payer.address, mint.address], lastValidBlockHeight: 200, blockhash, signingMethod: 'signTransaction' };
   const account = { address: payer.address, publicKey: payer.publicKey, chains: [MAINNET], features: ['solana:signTransaction', 'solana:signAndSendTransaction'] };

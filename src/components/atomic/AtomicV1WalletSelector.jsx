@@ -9,11 +9,11 @@ export default function AtomicV1WalletSelector({ disabled = false }) {
       disabled={disabled || state.connecting} onClick={() => state.connect(state.phantom)}>
       {state.connecting ? 'Connecting...' : 'Connect Phantom - native request'}
     </button>
-    <p className="text-xs leading-5 text-muted-foreground">The native route asks Phantom to sign the actual V1 transaction message. A missing Wallet Standard V1 flag does not disable this request. Phantom may still reject the format; its original response will be displayed.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Launch connects Phantom when needed and calls its native signTransaction method with a complete V1 transaction object. A missing Wallet Standard V1 flag does not disable the request. The installed wallet must still support the transaction format.</p>
     {!state.phantom && <p className="text-sm text-muted-foreground">Open the published HTTPS site in Phantom's in-app browser or a browser with the Phantom extension. Wallet injection may be unavailable inside an embedded preview.</p>}
     {state.account && <>
       <p className="break-all font-mono text-xs">Payer and creator: {state.address}</p>
-      <p className="text-xs">Route: {state.nativeRequest ? 'Phantom provider.request / signTransaction' : `Wallet Standard / ${state.method || 'unavailable'}`}</p>
+      <p className="text-xs">Route: {state.nativeRequest ? 'Phantom signTransaction / V1 transaction object' : `Wallet Standard / ${state.method || 'unavailable'}`}</p>
       {!state.nativeRequest && state.selected?.accounts?.length > 1 && <label className="block text-sm">Account<select className="ml-2 rounded border bg-background p-2" disabled={disabled} value={state.address} onChange={e => state.selectAccount(e.target.value)}>
         {state.selected.accounts.filter(a => a.chains.includes('solana:mainnet')).map(a => <option key={a.address} value={a.address}>{a.address}</option>)}
       </select></label>}
@@ -30,7 +30,7 @@ export default function AtomicV1WalletSelector({ disabled = false }) {
       <pre className="overflow-auto">{JSON.stringify(state.wallets.map(wallet => ({ name: wallet.name,
         signTransaction: wallet.features['solana:signTransaction']?.supportedTransactionVersions || [],
         signAndSendTransaction: wallet.features['solana:signAndSendTransaction']?.supportedTransactionVersions || [] })), null, 2)}</pre>
-      <p className="mt-2">The displayed versions are the wallet's actual advertised values. Native Phantom request availability does not assert V1 support.</p>
+      <p className="mt-2">The displayed versions are the wallet's actual advertised values. Native method availability does not assert V1 support.</p>
     </details>
   </section>;
 }
