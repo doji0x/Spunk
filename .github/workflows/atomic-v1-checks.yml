@@ -42,13 +42,6 @@ jobs:
           cd "$RUNNER_TEMP/atomic-v1-sdk"
           deno install --node-modules-dir=auto
           deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
-          deno run --node-modules-dir=auto --allow-read --allow-env tests/atomic-v1/inspect-sdk.ts > "$GITHUB_WORKSPACE/sdk-abi.txt"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: atomic-v1-sdk-abi
-          path: sdk-abi.txt
-          retention-days: 7
   application:
     runs-on: ubuntu-latest
     strategy:
