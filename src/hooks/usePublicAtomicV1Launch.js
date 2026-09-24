@@ -37,7 +37,12 @@ export default function usePublicAtomicV1Launch() {
     return saved;
   }
   async function initialize(address) {
-    let saved = readRecovery(localStorage, address);
+    let saved;
+    try {
+      saved = readRecovery(localStorage, address);
+    } catch {
+      clearRecovery(localStorage, address);
+    }
     if (!saved) { saved = newRecovery(address); writeRecovery(localStorage, saved); }
     if (!saved.coinMint) {
       invariant(!saved.preparationRequested, 'The saved launch mint is missing. Preserve the recovery data.');

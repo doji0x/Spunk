@@ -25,7 +25,8 @@ export default function PublicAtomicV1Launch() {
       {!saved && !session?.completed && <>
         <p className="text-xs text-muted-foreground">Budget a 0.03 SOL rent/fee reserve plus your optional first buy. This is a planning estimate, not a forced minimum balance. Priority fee is capped at 5,000 lamports. Review the native Phantom approval.</p>
         {!wallet.method && <p className="text-sm text-muted-foreground">Connect Phantom using the native request button above. The size preview is advisory; clicking launch performs a fresh preparation.</p>}
-        <AtomicV1Form state={state} allowFirstBuy={wallet.config.firstBuyEnabled} allowUnestimatedSubmit launchDisabled={busy} />
+        {(!wallet.canLaunch || !session) && <p role="status" className="text-sm text-muted-foreground">{!wallet.canLaunch ? 'Connect Phantom first' : error ? 'Launch session could not initialize. See the error below.' : 'Initializing launch session…'}</p>}
+        <AtomicV1Form state={state} allowFirstBuy={wallet.config.firstBuyEnabled} allowUnestimatedSubmit launchDisabled={busy || !wallet.canLaunch || !session} />
       </>}
       {saved && <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <h2 className="font-semibold">Saved launch: {session.input?.name}</h2>
