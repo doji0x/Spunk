@@ -7,6 +7,13 @@ on:
       - 'tests/atomic-v1/**'
       - 'package*.json'
       - '.github/workflows/atomic-v1-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'base44/**'
+      - 'tests/atomic-v1/**'
+      - '.github/workflows/atomic-v1-checks.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/atomic-v1/native.test.mjs
+      - run: node --test tests/atomic-v1/*.test.mjs
   sdk-roundtrip:
     runs-on: ubuntu-latest
     steps:
@@ -26,8 +33,13 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # Explicit dependency installation mode; no runtime network permission.
-      - run: deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
+      - name: Test explicitly pinned SDK imports in isolation
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/atomic-v1-sdk"
+          cp -R base44 tests "$RUNNER_TEMP/atomic-v1-sdk/"
+          cd "$RUNNER_TEMP/atomic-v1-sdk"
+          deno test --node-modules-dir=auto --no-check --allow-read --allow-env tests/atomic-v1/sdk.test.ts
   application:
     runs-on: ubuntu-latest
     strategy:
@@ -37,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ matrix.revision == 'base' && (github.event.pull_request.base.sha || github.event.repository.default_branch) || github.sha }}
+          ref: ${{ matrix.revision == 'base' && (github.event.pull_request.base.sha || github.event.before || github.event.repository.default_branch) || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
