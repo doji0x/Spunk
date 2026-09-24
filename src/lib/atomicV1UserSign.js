@@ -19,7 +19,7 @@ function currentAccount(wallet, account, isCurrent) {
  * an absent Wallet Standard capability; the wallet must decide V1 acceptance.
  */
 export async function signAtomicV1({ wallet, account, prepared, mint, intent, codec, isCurrent,
-  assertFresh, beforeWalletSend, persistSigned, onStage = () => {} }) {
+  assertFresh, beforeWalletSend, persistSigned, onStage = (_text) => {} }) {
   invariant(typeof isCurrent === 'function' && typeof assertFresh === 'function' && codec && intent, 'Missing signing safeguards.');
   const method = prepared.signingMethod, direct = isPhantomRequest(wallet);
   invariant(supportedMethods(wallet, account).includes(method), 'The selected native transaction API is unavailable.');
@@ -55,7 +55,7 @@ export async function signAtomicV1({ wallet, account, prepared, mint, intent, co
     invariant(equalBytes(decoded.signatures[mint.address], mintSignature), 'Wallet changed the mint signature; nothing was submitted.');
     const checked = await verifyWire(signed);
     const output = { signedTransactionBase64: toBase64(signed), transactionSignature: checked.transactionSignature };
-    await persistSigned(output); // Save the signed identity even when the next network check fails.
+    await persistSigned(output);
     await assertFresh(prepared);
     return output;
   }

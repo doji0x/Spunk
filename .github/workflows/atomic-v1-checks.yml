@@ -1,10 +1,10 @@
 name: Atomic V1 native signing checks
 on:
   pull_request:
-    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', 'package*.json', '.github/workflows/atomic-v1-checks.yml']
   push:
     branches: [main]
-    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', '.github/workflows/atomic-v1-checks.yml']
+    paths: ['src/**', 'base44/**', 'tests/atomic-v1/**', 'tests/atomic-v1-ui/**', '.github/workflows/atomic-v1-checks.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/atomic-v1-sdk"
-          cp -R base44 tests "$RUNNER_TEMP/atomic-v1-sdk/"
+          cp -R base44 tests src "$RUNNER_TEMP/atomic-v1-sdk/"
           cp tests/atomic-v1/sdk-package.json "$RUNNER_TEMP/atomic-v1-sdk/package.json"
           cd "$RUNNER_TEMP/atomic-v1-sdk"
           deno install --node-modules-dir=auto
@@ -68,6 +68,9 @@ jobs:
       - run: npm run build
       - if: always()
         run: npm run lint
+      - name: Public and admin submit-button regression tests
+        if: matrix.revision == 'head'
+        run: node --test tests/atomic-v1-ui/*.test.cjs
       - name: Typecheck with retained diagnostics
         if: always()
         shell: bash
