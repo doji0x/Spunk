@@ -11,7 +11,10 @@ export default function AtomicV1MessageReview({ review, onDecision }) {
     cancelButton.current?.focus();
     const escape = event => { if (event.key === 'Escape') decision.current(false); };
     document.addEventListener('keydown', escape);
-    return () => { document.removeEventListener('keydown', escape); previous?.focus?.(); };
+    return () => {
+      document.removeEventListener('keydown', escape);
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, [review]);
   if (!review) return null;
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
