@@ -1,10 +1,11 @@
 import { base58Decode, base58Encode, equalBytes, invariant, verifySignature } from '../../base44/shared/atomicV1Protocol.js';
 
-// This is an app transport, NOT a fabricated Wallet Standard V1 capability.
+// App transport, NOT a fabricated Wallet Standard transaction capability.
 export const PHANTOM_REQUEST = 'phantom-request';
+/** @param {any} [target] */
 export function getInjectedPhantom(target = globalThis.window) {
-  const provider = target?.phantom?.solana || target?.solana;
-  return provider?.isPhantom && typeof provider.request === 'function' ? provider : null;
+  return [target?.phantom?.solana, target?.solana].find(provider =>
+    provider?.isPhantom && typeof provider.request === 'function') || null;
 }
 export function phantomAddress(provider) {
   const key = provider?.publicKey;
@@ -16,7 +17,7 @@ export function isPhantomRequest(wallet) {
   return wallet?.transport === PHANTOM_REQUEST && wallet.provider?.isPhantom === true &&
     typeof wallet.provider.request === 'function';
 }
-function bytes(value, length) {
+function bytes(value, length = undefined) {
   let output;
   if (value instanceof Uint8Array) output = new Uint8Array(value);
   else if (value instanceof ArrayBuffer) output = new Uint8Array(value);
@@ -28,11 +29,11 @@ function bytes(value, length) {
 function responseSignature(value) {
   return typeof value === 'string' ? base58Decode(value, 64) : bytes(value, 64);
 }
-/** Native signTransaction JSON-RPC documented by Phantom:
+/** Phantom's documented native signTransaction request:
  * https://docs.phantom.com/solana/sending-a-transaction#request-2
- * params.message is Base58 of the compiled MESSAGE, not the full wire, a hash,
- * UTF-8 text, or a V0-labelled object. The wallet must still accept actual V1.
- * Sign-only intentionally retains the mint signature locally for assembly.
+ * params.message is Base58 of the compiled MESSAGE, not the full transaction,
+ * a hash, UTF-8 prose, or a V0-labelled object. Phantom must accept actual V1.
+ * The mint signature is retained locally and added after the payer approves.
  */
 export async function requestPhantomV1({ provider, message, mintAddress, mintSignature, payerAddress, codec, isCurrent }) {
   invariant(provider?.isPhantom && typeof provider.request === 'function', 'Phantom native request API is unavailable. Open the published site in Phantom or its browser extension.');
@@ -43,15 +44,13 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
   } catch (reason) {
     const error = new Error(typeof reason?.message === 'string' ? reason.message : String(reason));
     Object.assign(error, { source: 'phantom', stage: 'wallet-signing', code: reason?.code, cause: reason });
-    throw error; // Preserve wallet code/message. Never retry via signMessage or silently switch methods.
+    throw error;
   }
   invariant(isCurrent() && phantomAddress(provider) === payerAddress, 'The Phantom account changed during approval; no transaction was submitted.');
   if (result?.publicKey) {
     const returned = typeof result.publicKey === 'string' ? result.publicKey : result.publicKey.toBase58?.() || result.publicKey.toString?.();
     invariant(returned === payerAddress, 'Phantom returned a signature for a different account.');
   }
-  // Injected implementations may return a detached signature or a signed
-  // transaction object. Both must cryptographically authorize the exact message.
   let signature;
   if (result?.signature !== undefined && (typeof result.signature === 'string' || bytes(result.signature))) {
     signature = responseSignature(result.signature);
@@ -64,8 +63,6 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
     invariant(equalBytes(decoded.message, message), 'Phantom changed the prepared message. No transaction was submitted.');
     signature = decoded.signatures[payerAddress];
     const coSignature = decoded.signatures[mintAddress];
-    // A message-only native request has no mint signature to return. Accept
-    // zero/missing co-signature, but never a conflicting non-zero signature.
     invariant(!coSignature || coSignature.every(b => b === 0) || equalBytes(coSignature, mintSignature), 'Phantom returned a conflicting mint signature.');
   }
   invariant(signature && await verifySignature(signature, message, payerAddress), 'Phantom response did not contain a valid payer signature over the exact V1 message. Nothing was submitted.');

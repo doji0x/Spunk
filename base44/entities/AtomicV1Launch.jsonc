@@ -36,6 +36,8 @@
     "stateVersion": { "type": "number" },
     "verifiedPayer": { "type": "boolean" },
     "signingMethod": { "type": "string", "enum": ["signTransaction", "signAndSendTransaction"] },
+    "signingTransport": { "type": "string", "enum": ["wallet-standard", "phantom-request"] },
+    "metadataAuthorized": { "type": "boolean" },
     "signerAddresses": { "type": "array", "items": { "type": "string" } },
     "size": { "type": "object" }
   },
