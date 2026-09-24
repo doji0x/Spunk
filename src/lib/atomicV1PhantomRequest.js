@@ -1,6 +1,6 @@
 import { base58Decode, equalBytes, invariant, verifySignature } from '../../base44/shared/atomicV1Protocol.js';
 
-// App transport, NOT a fabricated Wallet Standard transaction capability.
+// App transport identifier retained for existing saved records and backend policy.
 export const PHANTOM_REQUEST = 'phantom-request';
 /** @param {any} [target] */
 export function getInjectedPhantom(target = globalThis.window) {
@@ -29,10 +29,9 @@ function bytes(value, length = undefined) {
 function responseSignature(value) {
   return typeof value === 'string' ? base58Decode(value, 64) : bytes(value, 64);
 }
-/** Pass a real, complete V1 VersionedTransaction to the native method.
- * Do NOT apply the legacy request({params:{message:...}}) example to V1.
- * The label PHANTOM_REQUEST is retained for saved-record/backend compatibility;
- * it no longer means the legacy raw-message request transport is used.
+/** Pass a complete V1 VersionedTransaction to the native method. Do not apply
+ * Phantom's legacy raw-message request example to the V1 wire format.
+ * PHANTOM_REQUEST is only a persisted app label, not a raw request API selection.
  */
 export async function requestPhantomV1({ provider, message, mintAddress, mintSignature, payerAddress, codec, isCurrent }) {
   invariant(provider?.isPhantom && typeof provider.signTransaction === 'function',
@@ -48,8 +47,8 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
     messageBytes: message.length, transactionBytes: wire.length, signatureSlots: decodedInput.signers.length };
   let result;
   try {
-    // Exactly one native sign-only request from the Launch flow. Never switch
-    // APIs after an error, send a truncated message, or relabel this as V0.
+    // Exactly one native sign-only call from Launch. Never retry another method
+    // after an error, supply only the message as a transaction, or relabel as V0.
     result = await provider.signTransaction(adapter.transaction);
   } catch (reason) {
     const error = new Error(typeof reason?.message === 'string' ? reason.message : String(reason));
@@ -57,6 +56,7 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
     throw error;
   }
   invariant(isCurrent() && phantomAddress(provider) === payerAddress, 'The Phantom account changed during approval; no transaction was submitted.');
+  adapter.checkMessage(adapter.transaction);
   if (result?.publicKey) {
     const returned = typeof result.publicKey === 'string' ? result.publicKey : result.publicKey.toBase58?.() || result.publicKey.toString?.();
     invariant(returned === payerAddress, 'Phantom returned a signature for a different account.');
@@ -66,8 +66,8 @@ export async function requestPhantomV1({ provider, message, mintAddress, mintSig
     signature = responseSignature(result.signature);
   } else {
     const transaction = result?.signedTransaction || result?.transaction || result || adapter.transaction;
-    // web3.js V1 results may be read-only. Validate every decoded field and
-    // re-encode their signatures with Kit instead of calling that serializer.
+    // web3.js V1 results may be read-only. Check their decoded fields and use
+    // Kit for signatures/wire rather than calling the unsupported serializer.
     const signedWire = transaction?.message && Array.isArray(transaction.signatures)
       ? adapter.encodeResult(transaction)
       : bytes(typeof transaction?.serialize === 'function'
