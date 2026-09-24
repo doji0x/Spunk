@@ -4,6 +4,7 @@ import { useAtomicV1Wallet } from '@/contexts/AtomicV1WalletContext';
 import { hasLaunchMintKey, launchMintKey, removeLaunchMintKey } from '@/lib/launchMintKey';
 import { atomicV1Codec } from '@/lib/atomicV1Kit';
 import { signAtomicV1 } from '@/lib/atomicV1UserSign';
+import { EXACT_MESSAGE_MODE } from '@/lib/atomicV1ExactMessage';
 import { isPhantomRequest } from '@/lib/atomicV1PhantomRequest';
 import { clearRecovery, readRecovery, writeRecovery } from '@/lib/atomicV1Recovery';
 import { createLaunchSessionLoader } from '@/lib/atomicV1LaunchSession';
@@ -24,12 +25,25 @@ export default function usePublicAtomicV1Launch() {
   const [file, setFile] = useState(null), [imageBase64, setImageBase64] = useState('');
   const [size, setSize] = useState(null), [sizing, setSizing] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [failure, setFailure] = useState(null), [result, setResult] = useState(null), [stage, setStage] = useState('');
+  const [messageReview, setMessageReview] = useState(null);
+  const reviewPending = useRef(null);
   const sessionRef = useRef(null), lock = useRef(false), sizeRevision = useRef(0);
   const sessionLoader = useRef(null), hydrationRevision = useRef(0);
   if (!sessionLoader.current) sessionLoader.current = createLaunchSessionLoader(localStorage, launchMintKey);
   const stageRef = useRef(''), mounted = useRef(true), pollingCount = useRef({ key: '', count: 0 });
   const isActive = address => mounted.current && wallet.capture().account?.address === address;
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; reviewPending.current?.resolve(null); reviewPending.current = null; }; }, []);
+  function decideMessageReview(approved) {
+    const pending = reviewPending.current;
+    if (!pending) return;
+    reviewPending.current = null; setMessageReview(null);
+    if (approved) progress('Requesting Phantom signMessage for the reviewed transaction bytes.');
+    pending.resolve(approved ? pending.review.messageHash : null);
+  }
+  function authorizeMessage(review) {
+    invariant(mounted.current && !reviewPending.current, 'Another transaction review is already open.');
+    return new Promise(resolve => { reviewPending.current = { review, resolve }; setMessageReview(review); });
+  }
   function progress(text) { stageRef.current = text; if (mounted.current) setStage(text); }
   function report(reason) {
     const message = errorText(reason);
@@ -183,6 +197,7 @@ export default function usePublicAtomicV1Launch() {
     const mint = await launchMintKey(saved.requestId);
     invariant(mint.address === saved.coinMint, 'Saved mint key mismatch.');
     const output = await signAtomicV1({ ...snapshot, prepared: saved.prepared, mint, codec: atomicV1Codec, onStage: progress,
+      signingMode: isPhantomRequest(snapshot.wallet) ? EXACT_MESSAGE_MODE : 'native', authorizeMessage,
       intent: { ...saved.input, walletAddress: saved.walletAddress, coinMint: saved.coinMint, imageSha256: saved.imageSha256, imageByteLength: saved.imageByteLength },
       assertFresh: async prepared => {
         const fresh = await invoke({ ...auth(saved, 'preflight'), messageHash: prepared.messageHash });
@@ -280,6 +295,6 @@ export default function usePublicAtomicV1Launch() {
     setFile(null); setInput(initial); setLinks(emptyLinks); setImageBase64(''); setResult(null); setSize(null);
     adoptSession(await initialize(saved.walletAddress));
   });
-  return { wallet, session, input, setInput, file, setFile, size, sizing, busy, error, failure, result, stage, launch, check, refresh, retry, reset,
+  return { messageReview, decideMessageReview, wallet, session, input, setInput, file, setFile, size, sizing, busy, error, failure, result, stage, launch, check, refresh, retry, reset,
     links, setLink: (key, value) => setLinks(current => ({ ...current, [key]: value })) };
 }

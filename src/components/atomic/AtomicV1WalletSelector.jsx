@@ -9,11 +9,11 @@ export default function AtomicV1WalletSelector({ disabled = false }) {
       disabled={disabled || state.connecting} onClick={() => state.connect(state.phantom)}>
       {state.connecting ? 'Connecting...' : 'Connect Phantom - native request'}
     </button>
-    <p className="text-xs leading-5 text-muted-foreground">Launch connects Phantom when needed and calls its native signTransaction method with a complete V1 transaction object. A missing Wallet Standard V1 flag does not disable the request. The installed wallet must still support the transaction format.</p>
+    <p className="text-xs leading-5 text-muted-foreground">Launch connects Phantom when needed and shows a transaction-authorization review before the experimental exact-byte signMessage request. A missing Wallet Standard V1 flag does not disable the request. Phantom may reject transaction bytes in signMessage; no acceptance is guaranteed.</p>
     {!state.phantom && <p className="text-sm text-muted-foreground">Open the published HTTPS site in Phantom's in-app browser or a browser with the Phantom extension. Wallet injection may be unavailable inside an embedded preview.</p>}
     {state.account && <>
       <p className="break-all font-mono text-xs">Payer and creator: {state.address}</p>
-      <p className="text-xs">Route: {state.nativeRequest ? 'Phantom signTransaction / V1 transaction object' : `Wallet Standard / ${state.method || 'unavailable'}`}</p>
+      <p className="text-xs">Route: {state.nativeRequest ? 'Phantom signMessage / experimental transaction authorization' : `Wallet Standard / ${state.method || 'unavailable'}`}</p>
       {!state.nativeRequest && state.selected?.accounts?.length > 1 && <label className="block text-sm">Account<select className="ml-2 rounded border bg-background p-2" disabled={disabled} value={state.address} onChange={e => state.selectAccount(e.target.value)}>
         {state.selected.accounts.filter(a => a.chains.includes('solana:mainnet')).map(a => <option key={a.address} value={a.address}>{a.address}</option>)}
       </select></label>}

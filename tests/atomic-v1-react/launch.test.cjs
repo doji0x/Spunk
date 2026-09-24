@@ -29,17 +29,15 @@ async function harness(options = {}) {
     provider.emit('connect', provider.publicKey); return { publicKey: provider.publicKey };
   };
   provider.disconnect = async () => { provider.isConnected = false; provider.publicKey = null; provider.emit('disconnect'); };
-  provider.request = async () => { throw new Error('Do not use the legacy raw-message request for transaction approval'); };
-  provider.signTransaction = async transaction => {
-    trace.push('signTransaction'); signatures++;
-    assert.equal(transaction.version, 1);
-    assert.deepEqual(transaction.message.serialize(), f.message);
-    assert.equal(transaction.serialize().length, f.message.length + 128);
-    assert.deepEqual(transaction.signatures[1], f.mint.sign(f.message));
+  provider.request = async () => { throw new Error('No fallback request is allowed'); };
+  provider.signTransaction = async () => { throw new Error('No automatic transaction-signing fallback'); };
+  provider.signMessage = async (bytes, display) => {
+    trace.push('signMessage'); signatures++;
+    assert.deepEqual(bytes, f.message); assert.equal(display, 'hex');
+    assert.equal(current.messageReview, null);
     if (options.signatureGate) await options.signatureGate.promise;
     if (options.signatureError) throw options.signatureError;
-    transaction.signatures[0] = f.payer.sign(f.message);
-    return transaction;
+    return { signature: f.payer.sign(bytes), publicKey: f.payer.address };
   };
   const local = storage();
   const win = new EventTarget(); win.phantom = { solana: provider };
@@ -131,7 +129,18 @@ async function harness(options = {}) {
   };
   return { f, provider, local, renderer, trace, key, minted, fill,
     state: () => current, counts: () => ({ connects, signatures, uploads, preparations, submits, mintRequests }),
-    submit: () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }),
+    submit: () => {
+      const task = renderer.root.findByType('form').props.onSubmit({ preventDefault() {} });
+      if (options.manualReview) return task;
+      let finished = false;
+      task.finally(() => { finished = true; });
+      const acknowledge = async () => {
+        while (!finished && !current.messageReview) await new Promise(resolve => setTimeout(resolve, 1));
+        if (current.messageReview) current.decideMessageReview(true);
+        return task;
+      };
+      return acknowledge();
+    },
     button: () => renderer.root.findAllByType('button').find(b => b.props.type === 'submit'),
     close: async () => {
       await act(async () => renderer.unmount());
@@ -151,7 +160,7 @@ test('actual Launch connects, awaits session, requests a full V1 signature and s
     assert.deepEqual(h.counts(), { connects: 1, signatures: 1, uploads: 1, preparations: 1, submits: 1, mintRequests: 3 });
     assert.equal(h.minted.size, 1);
     assert.ok(h.trace.indexOf('connect') < h.trace.indexOf('lock'));
-    assert.ok(h.trace.indexOf('prepare') < h.trace.indexOf('signTransaction'));
+    assert.ok(h.trace.indexOf('prepare') < h.trace.indexOf('signMessage'));
     assert.equal(h.state().session.coinMint, h.f.mint.address);
     assert.equal(h.state().input.name, 'Test'); assert.equal(h.state().file.name, 'selected.png');
   } finally { await h.close(); }
@@ -201,7 +210,7 @@ test('connection rejection retains Phantom code and does not upload or sign', as
 test('wallet decoder rejection comes from the signing method and never submits', async () => {
   const h = await harness({ signatureError: { code: -32603, message: 'Reached end of buffer unexpectedly' } });
   try { await h.fill(); await act(async () => h.submit());
-    assert.equal(h.state().failure.source, 'Phantom'); assert.equal(h.state().failure.stage, 'wallet-signing');
+    assert.equal(h.state().failure.source, 'Phantom'); assert.equal(h.state().failure.stage, 'wallet-message-signing');
     assert.equal(h.state().failure.code, -32603); assert.equal(h.state().error, 'Reached end of buffer unexpectedly');
     assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 0);
   } finally { await h.close(); }
@@ -232,4 +241,37 @@ test('explicit operator disable is preserved', async () => {
   const h = await harness({ disabled: true });
   try { await h.fill(); await act(async () => h.submit()); assert.match(h.state().error, /explicitly disabled/); assert.equal(h.counts().connects, 0); assert.equal(h.counts().signatures, 0); }
   finally { await h.close(); }
+});
+
+test('experimental review must be accepted before Phantom receives any message bytes', async () => {
+  const h = await harness({ manualReview: true }); let task;
+  try {
+    await h.fill(); await act(async () => { task = h.submit(); });
+    for (let n = 0; !h.state().messageReview && n < 100; n++) await act(async () => { await new Promise(r => setTimeout(r, 1)); });
+    const review = h.state().messageReview;
+    assert.ok(review); assert.equal(review.mintAddress, h.f.mint.address);
+    assert.equal(review.imageByteLength, h.f.image.length); assert.equal(review.firstBuySol, '0');
+    assert.equal(h.counts().signatures, 0); assert.equal(h.counts().submits, 0);
+    await act(async () => { h.state().decideMessageReview(true); await task; });
+    assert.equal(h.state().error, ''); assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 1);
+  } finally { h.state().decideMessageReview(false); await task; await h.close(); }
+});
+test('cancelling experimental review makes no wallet signing or broadcast call', async () => {
+  const h = await harness({ manualReview: true }); let task;
+  try {
+    await h.fill(); await act(async () => { task = h.submit(); });
+    for (let n = 0; !h.state().messageReview && n < 100; n++) await act(async () => { await new Promise(r => setTimeout(r, 1)); });
+    assert.ok(h.state().messageReview);
+    await act(async () => { h.state().decideMessageReview(false); await task; });
+    assert.match(h.state().error, /cancelled/); assert.equal(h.counts().signatures, 0); assert.equal(h.counts().submits, 0);
+  } finally { h.state().decideMessageReview(false); await task; await h.close(); }
+});
+test('Phantom transaction-detection refusal is displayed without another signing request', async () => {
+  const h = await harness({ signatureError: { code: -32603, message: 'You cannot sign solana transactions using sign message.' } });
+  try {
+    await h.fill(); await act(async () => h.submit());
+    assert.equal(h.state().error, 'You cannot sign solana transactions using sign message.');
+    assert.equal(h.state().failure.stage, 'wallet-message-signing');
+    assert.equal(h.counts().signatures, 1); assert.equal(h.counts().submits, 0);
+  } finally { await h.close(); }
 });
