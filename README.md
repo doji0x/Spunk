@@ -4,9 +4,9 @@
 
 ## What the application does
 
-- **Create a coin:** Launch a pump.fun coin on Solana mainnet with an image and details approved through a connected Phantom wallet (`/launch-coin`).
+- **Launch a coin:** On `/launch-coin`, choose an uploaded image or an existing inscribed NFT, enter coin details, and set a required first buy. Both use the same pump.fun create-and-buy transaction approved through Phantom. Pair selection, creator fees, holder rewards, and optional custom fee sharing are available for either image source; custom splits require a separate approval after launch.
 - **Inscribe artwork:** Submit an image for a one-of-one NFT inscription, monitor progress, and review past inscriptions (`/inscribe`). Image bytes are written in resumable chunks and verified against the completed on-chain data.
-- **Launch from an inscription:** Use an eligible inscribed NFT as the source for a coin launch (`/launch`).
+- **Choose an inscribed image:** Select “Use inscribed NFT” in the unified launch form to use a verified on-chain image through the inscription resolver. `/launch` redirects to `/launch-coin`.
 - **Edit supported coin metadata:** A confirmed coin launched through the supported public flow can have its served name, image, and links updated by the launching wallet’s signed request (`/edit-coin`). Eligibility and the scope of updates depend on the launch; this does not rewrite immutable on-chain records or guarantee that third-party caches refresh immediately.
 - **Verify an inscription:** Submit a mint address or transaction signature on the home page. Independent checks examine supported Metaplex, LibrePlex, versioned-transaction, and token-held inscription paths and return evidence or an explicit inconclusive result.
 - **Participate in the community:** Connect a wallet to create a profile and post to the feed (`/feed`).
@@ -51,6 +51,7 @@ npm run build
 ## Operational notes
 
 - Inscription writes can take multiple transactions; the background worker stores progress to support resumption.
+- Saved coin launches retain their mint keys in the originating browser. Check or resume unconfirmed launches from either image source; an uncertain submission is checked before another approval is requested. Older create-only drafts require an explicit first buy and fresh wallet approval before a new create-and-buy attempt.
 - A `valid` verifier result describes the observed on-chain state; `unknown` means the evidence was inconclusive, not that an inscription is absent.
 - Metadata services and third-party platforms may cache results, so displayed changes may lag behind an update.
 - A long-lived metadata URI depends on its hosting domain and endpoint remaining available. Plan domain ownership and continuity before using one as permanent launch infrastructure.

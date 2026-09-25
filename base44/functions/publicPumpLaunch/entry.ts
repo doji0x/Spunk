@@ -81,7 +81,7 @@ export default async function(req: Request): Promise<Response> {
       const signedTransaction = Buffer.from(transaction.serialize()).toString('base64');
       // A blockhash that expired while the user reviewed in Phantom is not a failure:
       // tell the client to re-prepare with the same request so the coin mint is reused.
-      const expired = { error: 'The transaction expired while waiting for approval. Preparing a fresh one…', reprepare: true };
+      const expired = { error: 'The transaction expired before submission. Check this saved launch, then resume with the same coin mint.', reprepare: true };
       if (attempt?.lastValidBlockHeight && await rpcRequest(rpcUrl, 'getBlockHeight', [{ commitment: 'confirmed' }]) > attempt.lastValidBlockHeight) return Response.json(expired, { status: 410 });
       let signature;
       try { signature = await rpcRequest(rpcUrl, 'sendTransaction', [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }]); }
@@ -162,7 +162,8 @@ export default async function(req: Request): Promise<Response> {
     // the coin originates from their Phantom session and never from a server wallet.
     const coinMint = String(body.coinMint || '').trim();
     if (!addressPattern.test(coinMint)) return Response.json({ error: 'Reconnect your wallet and tap Launch again — the coin mint could not be read.' }, { status: 400 });
-    authorizeLaunch(body, input, walletAddress, coinMint, socials, recipients);
+    try { authorizeLaunch(body, input, walletAddress, coinMint, socials, recipients); }
+    catch (error) { return Response.json({ error: error.message }, { status: 403 }); }
     const mintKey = new PublicKey(coinMint);
     const bondingCurve = bondingCurvePda(mintKey).toBase58();
     const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
@@ -178,7 +179,9 @@ export default async function(req: Request): Promise<Response> {
       if (!legacyCreateOnly && (attempt.quoteMint !== input.quoteMint || attempt.firstBuyAmount !== input.firstBuyAmount || (attempt.creatorFeeBps || 0) !== input.creatorFeeBps || Boolean(attempt.holderReward) !== input.holderReward || JSON.stringify(attempt.feeRecipients || []) !== JSON.stringify(recipients))) return Response.json({ error: 'Saved buy and reward settings cannot be changed.' }, { status: 409 });
       if (legacyCreateOnly && attempt.status === 'prepared' && attempt.preparedTransaction) return Response.json({ error: 'The previous create-only approval is still valid. Wait for it to expire, then check and resume before approving a first buy.' }, { status: 409 });
     }
-    const { uri, imageUrl: resolvedImageUrl } = await resolveLaunchSource(input, coinMint);
+    let uri, resolvedImageUrl;
+    try { ({ uri, imageUrl: resolvedImageUrl } = await resolveLaunchSource(input, coinMint)); }
+    catch (error) { return Response.json({ error: error.message }, { status: 422 }); }
     // A resumed request whose coin already landed must never be relaunched.
     if (await isLaunched(rpcUrl, coinMint, bondingCurve)) {
       if (attempt) attempt = await attempts.update(attempt.id, { status: 'confirmed', checkedAt: new Date().toISOString() });

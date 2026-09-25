@@ -28,7 +28,7 @@ export default function LaunchCoin() {
       <SavedLaunches attempts={state.attempts} busy={busy || loading} onCheck={state.check} onResume={state.resume} />
       {(!state.attempts.length || state.recovery) && <><UnifiedLaunchForm state={state} /><LaunchPreview input={state.input} file={state.file} recovery={state.recovery} wallet={wallet} /></>}
       <PublicLaunchPreflight preflight={state.preflight} />
-      <PublicLaunchResult result={result} />
+      <PublicLaunchResult result={result && { ...result, quoteSymbol: result.quoteSymbol || state.settings.pairs?.find(pair => pair.mint === result.quoteMint)?.symbol }} />
       {result?.status === 'confirmed' && result.feeRecipients?.length > 0 && result.rewardStatus !== 'confirmed' && <Button type="button" variant="outline" disabled={busy || loading} onClick={state.rewards}>{result.rewardSignature ? 'Check fee-sharing transaction' : 'Configure fee sharing'}</Button>}
       {result?.status === 'confirmed' && result.inscribedMint && <EditLaunchLinksCard key={result.coinMint} coinMint={result.coinMint} wallet={wallet} initial={result.socials} />}
     </main><ValidateBottomBar />

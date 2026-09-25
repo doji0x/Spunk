@@ -67,7 +67,7 @@ export default function useUnifiedLaunch() {
     if (wallet.address !== saved.walletAddress) throw new Error('Connect the original launch wallet.');
     setStage('Checking the saved launch before resuming…');
     const checked = await checkLaunch(saved, persist);
-    if (checked.status === 'confirmed') return;
+    if (checked.status === 'confirmed') { if (checked.feeRecipients?.length && checked.rewardStatus !== 'confirmed') await configureLaunchRewards(checked, wallet, persist, setStage); return; }
     if (checked.status === 'pending') throw new Error('This transaction may still land. Keep this launch and check again before requesting another approval.');
     if (!hasLaunchMintKey(checked.requestId)) throw new Error('Resume in the original browser where the mint key was saved.');
     if (!Number(checked.firstBuyAmount)) { setRecovery(checked); setInput({ ...initialLaunchInput, ...launchParams(checked), firstBuyAmount: '' }); setFile(null); setPreflight(null); return; }

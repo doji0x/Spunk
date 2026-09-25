@@ -33,7 +33,7 @@ export function normalizeLaunch(input) {
     if (value.length > 200 || !['http:', 'https:'].includes(url.protocol)) throw new Error(`Enter a valid ${key} URL of at most 200 characters.`);
     return [key, url.toString()];
   }));
-  const feeRecipients = input.feeRecipients.map(row => ({ type: row.type, value: row.type === 'creator' ? 'Creator' : row.value.trim(), shareBps: Number(row.shareBps) }));
+  const feeRecipients = (input.feeRecipients || []).map(row => ({ type: row.type, value: row.type === 'creator' ? 'Creator' : String(row.value || '').trim(), shareBps: Number(row.shareBps) }));
   return { ...input, name, symbol, description, firstBuyAmount, inscribedMint: input.launchMode === 'inscribed' ? input.inscribedMint.trim() : '', socials, ...socials, feeRecipients, creatorFeeBps: Math.round(Number(input.creatorFeePercent || 0) * 100), holderReward: Boolean(input.holderReward) };
 }
 export async function createLaunchDraft(input, file, walletAddress, progress) {
@@ -45,7 +45,7 @@ export async function createLaunchDraft(input, file, walletAddress, progress) {
     fields.imageUrl = (await upload(file)).file_url;
     progress('Saving public metadata…');
     const metadata = { name: fields.name, symbol: fields.symbol, description: fields.description, image: fields.imageUrl, showName: true, ...fields.socials };
-    fields.metadataUrl = (await upload(new File([JSON.stringify(metadata)], 'metadata.json', { type: 'application/json' }))).file_url;
+    fields.metadataUrl = (await upload(new File([JSON.stringify(metadata)], 'm.json', { type: 'application/json' }))).file_url;
     if (new TextEncoder().encode(fields.metadataUrl).length > 200) throw new Error('The metadata URL exceeds the 200-byte limit. Nothing was signed.');
   } else if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(fields.inscribedMint)) throw new Error('Enter a valid inscribed NFT mint address.');
   const requestId = crypto.randomUUID(), mint = await launchMintKey(requestId);

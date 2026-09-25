@@ -1,32 +1,11 @@
 import React from 'react';
-import { ArrowRight, Gem, PartyPopper } from 'lucide-react';
+import { Fingerprint, ShieldCheck, Image as ImageIcon } from 'lucide-react';
 
 export default function InscribedLaunchGuide({ admin = false }) {
   const items = [
-    {
-      icon: Gem,
-      title: admin ? 'One master NFT' : 'Use your own inscription',
-      text: admin
-        ? 'Each mint created here is one single master NFT—not an NFT collection.'
-        : 'Launch from a unique inscribed NFT or an inscribed NFT collection you hold or control.',
-    },
-    {
-      icon: ArrowRight,
-      title: 'Directional verification',
-      text: 'The token launch is connected to its inscription for true, directional verification on-chain.',
-    },
-    {
-      icon: PartyPopper,
-      title: 'Create a reveal party',
-      text: 'Mint the master NFT first, launch the token, then inscribe the final artwork after launch for an on-chain reveal.',
-    },
+    { icon: Fingerprint, title: admin ? 'Mint a master NFT' : 'Start with an inscription', description: admin ? 'Mint a master NFT with artwork stored on Solana before launching a coin.' : 'Use an inscribed NFT as the source for your coin artwork.' },
+    { icon: ShieldCheck, title: 'Verify the connection', description: 'Check the inscription and token linkage independently against on-chain data.' },
+    { icon: ImageIcon, title: 'Artwork reveal', description: 'The coin metadata resolves to the on-chain inscription image as it becomes available.' }
   ];
-
-  return <section aria-label="Inscribed token launch options" className="mb-7 grid gap-3 sm:grid-cols-3">
-    {items.map(({ icon: Icon, title, text }) => <div key={title} className="rounded-2xl border border-border bg-card/70 p-4">
-      <Icon className="mb-3 h-5 w-5 text-primary" />
-      <h3 className="font-display text-sm font-semibold">{title}</h3>
-      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{text}</p>
-    </div>)}
-  </section>;
+  return <section className="mb-6" aria-label="Inscribed launch guide"><p className="mb-3 font-mono text-[10px] tracking-widest text-primary">INSCRIBED LAUNCH GUIDE</p><div className="grid gap-3 sm:grid-cols-3">{items.map(({ icon: Icon, title, description }) => <article key={title} className="rounded-xl border border-border bg-card p-4"><Icon size={18} className="mb-3 text-primary" /><h3 className="text-sm font-semibold">{title}</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p></article>)}</div></section>;
 }
