@@ -25,7 +25,7 @@ export default function LaunchCoin() {
       {state.stage && <p role="status" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-sm"><Loader2 size={16} className="shrink-0 animate-spin text-primary" />{state.stage}</p>}
       {state.error && <p role="alert" className="break-words rounded-xl border border-destructive/40 p-4 text-sm text-destructive">{state.error}</p>}
       {loading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" />Loading launch settings and saved attempts…</p>}
-      <SavedLaunches attempts={state.attempts} busy={busy || loading} onCheck={state.check} onResume={state.resume} />
+      <SavedLaunches attempts={state.attempts} busy={busy || loading} onCheck={state.check} onResume={state.resume} onDelete={state.remove} />
       {(!state.attempts.length || state.recovery) && <><UnifiedLaunchForm state={state} /><LaunchPreview input={state.input} file={state.file} recovery={state.recovery} wallet={wallet} /></>}
       <PublicLaunchPreflight preflight={state.preflight} />
       <PublicLaunchResult result={result && { ...result, quoteSymbol: result.quoteSymbol || state.settings.pairs?.find(pair => pair.mint === result.quoteMint)?.symbol }} />

@@ -14,6 +14,7 @@ import { authorizeLaunch, resolveLaunchSource } from '../../shared/publicLaunchS
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../shared/pumpPairs.ts';
 import { checkPublicLaunch, publicAttempt } from '../../shared/publicLaunchAttempts.ts';
+import { verifySignedMessage } from '../../shared/walletSignature.ts';
 
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
@@ -58,6 +59,21 @@ export default async function(req: Request): Promise<Response> {
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
     if (body.action === 'check' || body.action === 'checkNormal') return Response.json(await checkPublicLaunch(createClientFromRequest(req), rpcUrl, body));
+    if (body.action === 'deleteSaved') {
+      const requestId = String(body.requestId || ''), walletAddress = String(body.walletAddress || '');
+      if (!requestIdPattern.test(requestId) || !addressPattern.test(walletAddress)) return Response.json({ error: 'Invalid saved launch.' }, { status: 400 });
+      const signature = String(body.signature || '');
+      const message = `Curated: delete saved launch\nRequest: ${requestId}\nWallet: ${walletAddress}`;
+      let authorized = false;
+      try { authorized = signature.length <= 128 && verifySignedMessage(message, signature, walletAddress); } catch { /* Invalid wallet signature. */ }
+      if (!authorized) return Response.json({ error: 'Approve deletion with the original Phantom wallet.' }, { status: 403 });
+      const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
+      const [row] = await attempts.filter({ requestId, walletAddress });
+      if (!row) return Response.json({ deleted: true });
+      if (row.status === 'confirmed' || await isLaunched(rpcUrl, row.coinMint, row.bondingCurve)) return Response.json({ error: 'This coin is already live. Check its status instead; live coin metadata must remain available.' }, { status: 409 });
+      await attempts.delete(row.id);
+      return Response.json({ deleted: true });
+    }
     if (body.action === 'options') {
       const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
       const global = await onlineSdk.fetchGlobal();

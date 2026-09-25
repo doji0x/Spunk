@@ -1,5 +1,5 @@
 import { base44 } from '@/api/base44Client';
-import { launchMintKey } from '@/lib/launchMintKey';
+import { launchMintKey, removeLaunchMintKey } from '@/lib/launchMintKey';
 import timeout from '@/lib/atomicV1Timeout';
 
 export const initialLaunchInput = { launchMode: 'upload', inscribedMint: '', name: '', symbol: '', description: '', quoteMint: 'So11111111111111111111111111111111111111112', firstBuyAmount: '', creatorFeePercent: '', feeMode: 'creator', holderReward: false, feeRecipients: [], website: '', twitter: '', github: '' };
@@ -16,6 +16,14 @@ export function persistLaunch(row) {
   const rows = readLaunches(row.walletAddress);
   localStorage.setItem(launchStorageKey(row.walletAddress), JSON.stringify([row, ...rows.filter(item => item.requestId !== row.requestId)].slice(0, 100)));
   return row;
+}
+export function forgetLaunch(row) {
+  const address = row.walletAddress;
+  localStorage.setItem(launchStorageKey(address), JSON.stringify(readLaunches(address).filter(item => item.requestId !== row.requestId)));
+  const legacyKey = `validate:normal-pump:${address}`;
+  const legacy = localStorage.getItem(legacyKey);
+  if (legacy && JSON.parse(legacy).requestId === row.requestId) localStorage.removeItem(legacyKey);
+  removeLaunchMintKey(row.requestId);
 }
 export function launchParams(row) {
   return { ...row, launchMode: imageSource(row), creatorFeePercent: String((row.creatorFeeBps || 0) / 100), feeMode: row.holderReward ? 'holders' : row.feeRecipients?.length ? 'split' : 'creator', feeRecipients: row.feeRecipients || [], ...(row.socials || {}) };

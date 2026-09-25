@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePhantomWallet } from '@/contexts/PhantomWalletContext';
 import { hasLaunchMintKey } from '@/lib/launchMintKey';
-import { initialLaunchInput, invokeLaunch, readLaunches, persistLaunch, createLaunchDraft, launchParams, normalizeLaunch } from '@/lib/unifiedLaunch';
+import { toBase64 } from '@/lib/unifiedLaunch';
+import { initialLaunchInput, invokeLaunch, readLaunches, persistLaunch, forgetLaunch, createLaunchDraft, launchParams, normalizeLaunch } from '@/lib/unifiedLaunch';
 import { checkLaunch, executeLaunch, configureLaunchRewards, waitForLaunch } from '@/lib/launchExecution';
 
 export default function useUnifiedLaunch() {
@@ -43,11 +44,11 @@ export default function useUnifiedLaunch() {
     load().catch(reason => active && setError(reason.response?.data?.error || reason.message)).finally(() => active && setHistoryLoading(false));
     return () => { active = false; };
   }, [wallet.address]);
-  const guarded = async task => {
+  const guarded = async (task, requireMainnet = true) => {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
     const owner = wallet.address;
-    const run = async () => { if (wallet.network !== 'mainnet-beta') throw new Error('Switch to Mainnet to continue.'); await task(); };
+    const run = async () => { if (requireMainnet && wallet.network !== 'mainnet-beta') throw new Error('Switch to Mainnet to continue.'); await task(); };
     try {
       if (navigator.locks && owner) await navigator.locks.request(`curated:launch:${owner}`, { ifAvailable: true }, async lease => { if (!lease) throw new Error('Another tab is handling this wallet’s launch. Return to that tab.'); await run(); });
       else await run();
@@ -87,7 +88,22 @@ export default function useUnifiedLaunch() {
     }
     persist(saved); await run(saved);
   }); };
+  const remove = saved => guarded(async () => {
+    if (!wallet.address || wallet.address !== saved.walletAddress || wallet.provider?.publicKey?.toString() !== saved.walletAddress) throw new Error('Connect the original launch wallet to delete this saved launch.');
+    setStage('Confirm deletion in Phantom…');
+    const message = `Curated: delete saved launch\nRequest: ${saved.requestId}\nWallet: ${saved.walletAddress}`;
+    const signed = await wallet.provider.signMessage(new TextEncoder().encode(message), 'utf8');
+    setStage('Deleting saved launch…');
+    await invokeLaunch({ action: 'deleteSaved', requestId: saved.requestId, walletAddress: saved.walletAddress, signature: toBase64(signed.signature) });
+    forgetLaunch(saved);
+    if (alive.current && addressRef.current === saved.walletAddress) {
+      setAttempts(current => current.filter(item => item.requestId !== saved.requestId));
+      setResult(current => current?.requestId === saved.requestId ? null : current);
+      setRecovery(current => current?.requestId === saved.requestId ? null : current);
+      setPreflight(null);
+    }
+  }, false);
   const rewards = () => guarded(async () => { if (result?.status === 'confirmed' && result.walletAddress === wallet.address) await configureLaunchRewards(result, wallet, persist, setStage); });
   const cancelRecovery = () => { setRecovery(null); setInput(initialLaunchInput); };
-  return { wallet, input, setInput, file, setFile, settings, busy, loading: optionsLoading || historyLoading, error, stage, preflight, result, attempts, recovery, launch, check, resume, rewards, cancelRecovery };
+  return { wallet, input, setInput, file, setFile, settings, busy, loading: optionsLoading || historyLoading, error, stage, preflight, result, attempts, recovery, launch, check, resume, remove, rewards, cancelRecovery };
 }
