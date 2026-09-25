@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Image } from '@/components/ui/image';
+import { ImageUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ export default function CoinEditorImage({ fields, file, setFile, update }) {
   const preview = localUrl || (/^https?:\/\//i.test(fields.imageUrl) ? fields.imageUrl : '');
   const choose = value => { setFile(value || null); };
   return <div className="space-y-4">
-    <div className="flex items-center gap-4"><Image src="https://media.base44.com/images/public/6aa8d3c82020abebe308c467/83ead24ae_generated_c144565f.png" alt="Upload or use an image URL" className="h-14 w-14 shrink-0 rounded-lg" fittingType="fit" /><p className="text-xs leading-5 text-muted-foreground">Upload a replacement or paste an image URL. If both are provided, the file takes priority. Leave both empty to keep the current image.</p></div>
+    <div className="flex items-center gap-4"><div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-border bg-muted"><ImageUp size={22} className="text-primary" /></div><p className="text-xs leading-5 text-muted-foreground">Upload a replacement or paste an image URL. If both are provided, the file takes priority. Leave both empty to keep the current image.</p></div>
     {preview && <Image src={preview} alt="Coin artwork preview" className="h-36 w-36 rounded-xl border border-border bg-background" fittingType="fit" />}
     <label htmlFor="edit-image-file" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!event.currentTarget.closest('fieldset')?.disabled) choose(event.dataTransfer.files[0]); }} className="block cursor-pointer rounded-xl border border-dashed border-border bg-background/50 p-4 transition hover:border-primary/50">
       <span className="block text-sm font-medium">Upload or drop an image</span><span className="mt-1 block break-all text-xs text-muted-foreground">{file ? file.name : 'PNG, JPG, WebP or GIF · up to 5 MB'}</span>
