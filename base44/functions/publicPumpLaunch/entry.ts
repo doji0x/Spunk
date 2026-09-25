@@ -9,12 +9,11 @@ import { atomicAmount } from '../../shared/pumpBuy.ts';
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, socialFeePda } from 'npm:@pump-fun/pump-sdk@2.0.0';
 import { secrets } from 'base44:runtime';
 import { assertMainnet, rpcRequest } from '../../shared/mintWallet.ts';
-import { verifyInscription } from '../../shared/verifyInscription.ts';
-import { isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
-import { checkMetadataProxy } from '../../shared/pumpLaunchValidation.ts';
+import { isLaunched } from '../../shared/pumpLaunch.ts';
+import { authorizeLaunch, resolveLaunchSource } from '../../shared/publicLaunchSource.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../shared/pumpPairs.ts';
-import { prepareNormalLaunch, checkNormalLaunch, normalPublicAttempt } from '../../shared/normalPumpLaunch.ts';
+import { checkPublicLaunch, publicAttempt } from '../../shared/publicLaunchAttempts.ts';
 
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
@@ -51,12 +50,14 @@ async function verifySubmitToken(messageBytes, token) {
 export default async function(req: Request): Promise<Response> {
   try {
     if (req.method !== 'POST') return Response.json({ error: 'Use POST.' }, { status: 405 });
-    const body = await req.json();
+    const text = await req.text();
+    if (text.length > 24000) return Response.json({ error: 'Launch request is too large.' }, { status: 413 });
+    const body = JSON.parse(text);
+    if (body.action === 'prepare' && (!/^\d+(\.\d+)?$/.test(String(body.firstBuyAmount || '').trim()) || !Number.isFinite(Number(body.firstBuyAmount)) || Number(body.firstBuyAmount) <= 0)) return Response.json({ error: 'A positive first-buy amount is required for every launch.' }, { status: 400 });
     if (body.network !== 'mainnet-beta') return Response.json({ error: 'pump.fun launches are available on mainnet only. Switch the network to Mainnet.' }, { status: 400 });
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
-    if (body.action === 'checkNormal') return Response.json(await checkNormalLaunch(createClientFromRequest(req), rpcUrl, body));
-    if (body.action === 'prepare' && body.launchMode === 'normal') return Response.json(await prepareNormalLaunch(createClientFromRequest(req), rpcUrl, body, createSubmitToken));
+    if (body.action === 'check' || body.action === 'checkNormal') return Response.json(await checkPublicLaunch(createClientFromRequest(req), rpcUrl, body));
     if (body.action === 'options') {
       const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
       const global = await onlineSdk.fetchGlobal();
@@ -91,10 +92,8 @@ export default async function(req: Request): Promise<Response> {
     if (body.action === 'resume') {
       const walletAddress = String(body.walletAddress || '').trim();
       if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Invalid wallet address.' }, { status: 400 });
-      const records = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ walletAddress }, '-created_date', 20);
-      return Response.json({ attempts: records.filter(item => body.launchMode === 'normal'
-        ? item.launchMode === 'normal' && item.status !== 'confirmed'
-        : item.launchMode !== 'normal' && ['prepared', 'pending'].includes(item.status)).map(normalPublicAttempt) });
+      const records = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ walletAddress, status: { $ne: 'confirmed' } }, '-created_date', 100);
+      return Response.json({ attempts: records.map(publicAttempt) });
     }
     if (body.action === 'confirmSharing') {
       const signature = String(body.signature || '');
@@ -146,34 +145,40 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ status, error: state?.err ? JSON.stringify(state.err) : '' });
     }
     if (body.action !== 'prepare') return Response.json({ error: 'Invalid public launch action.' }, { status: 400 });
-    const input = { inscribedMint: String(body.inscribedMint || '').trim(), name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), requestId: String(body.requestId || ''), quoteMint: String(body.quoteMint || solMint.toBase58()).trim(), firstBuyAmount: String(body.firstBuyAmount || '').trim(), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
+    const launchMode = body.launchMode === 'normal' ? 'upload' : body.launchMode || 'inscribed';
+    if (!['upload', 'inscribed'].includes(launchMode)) return Response.json({ error: 'Choose an image source.' }, { status: 400 });
+    const input = { launchMode, inscribedMint: launchMode === 'inscribed' ? String(body.inscribedMint || '').trim() : '', name: String(body.name || '').trim(), symbol: String(body.symbol || '').trim().toUpperCase(), description: String(body.description || '').trim(), metadataUrl: String(body.metadataUrl || ''), imageUrl: String(body.imageUrl || ''), requestId: String(body.requestId || ''), quoteMint: String(body.quoteMint || solMint.toBase58()).trim(), firstBuyAmount: String(body.firstBuyAmount || '').trim(), holderReward: body.holderReward === true, creatorFeeBps: Math.round(Number(body.creatorFeePercent || 0) * 100) };
     let socials, recipients;
     try { socials = { website: socialUrl(body.website, 'website'), twitter: socialUrl(body.twitter, 'X / Twitter'), github: socialUrl(body.github, 'GitHub') }; recipients = parseRecipients(body.feeRecipients, input.holderReward); }
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
     const walletAddress = String(body.walletAddress || '').trim();
-    if (!addressPattern.test(walletAddress) || !addressPattern.test(input.inscribedMint) || !input.name || Buffer.byteLength(input.name) > 32 || !input.symbol || Buffer.byteLength(input.symbol) > 10 || !/^[0-9a-f-]{36}$/i.test(input.requestId)) return Response.json({ error: 'Check your wallet, inscription, coin name, and ticker.' }, { status: 400 });
+    if (!addressPattern.test(walletAddress) || !input.name || Buffer.byteLength(input.name) > 32 || !input.symbol || Buffer.byteLength(input.symbol) > 10 || input.description.length > 2000 || !requestIdPattern.test(input.requestId)) return Response.json({ error: 'Check your wallet, coin name, ticker, and description.' }, { status: 400 });
     const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
     let pair, quote;
     try { ({ pair, quote } = await resolveSupportedPair(onlineSdk, input.quoteMint)); }
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
-    const proof = await verifyInscription(input.inscribedMint);
-    if (proof.status !== 'valid') return Response.json({ error: proof.reason || proof.message || 'This is not a valid inscription.' }, { status: 422 });
     const wallet = new PublicKey(walletAddress);
     // The coin mint is generated in the launching user's browser and supplied here, so
     // the coin originates from their Phantom session and never from a server wallet.
     const coinMint = String(body.coinMint || '').trim();
     if (!addressPattern.test(coinMint)) return Response.json({ error: 'Reconnect your wallet and tap Launch again — the coin mint could not be read.' }, { status: 400 });
-    // Socials stay off the on-chain uri (Metaplex caps it at 200 bytes) and are served
-    // from this attempt record instead, keyed by the coin mint.
-    const uri = metadataUri(input.inscribedMint, coinMint);
-    const proxy = await checkMetadataProxy(uri, imageUri(input.inscribedMint));
-    if (!proxy.ready) return Response.json({ error: proxy.message }, { status: 422 });
+    authorizeLaunch(body, input, walletAddress, coinMint, socials, recipients);
     const mintKey = new PublicKey(coinMint);
     const bondingCurve = bondingCurvePda(mintKey).toBase58();
     const attempts = createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt;
-    let [attempt] = await attempts.filter({ requestId: input.requestId, walletAddress });
-    if (attempt && attempt.coinMint !== coinMint) return Response.json({ error: 'This launch request was prepared with different coin details. Start a new launch.' }, { status: 409 });
-    const launchSummary = { coinMint, bondingCurve, quoteMint: input.quoteMint, quoteSymbol: pair.symbol, firstBuyAmount: input.firstBuyAmount, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, socials, requestId: input.requestId };
+    let [attempt] = await attempts.filter({ requestId: input.requestId });
+    if (attempt && (attempt.walletAddress !== walletAddress || attempt.coinMint !== coinMint || attempt.name !== input.name || attempt.symbol !== input.symbol || (attempt.inscribedMint || '') !== input.inscribedMint || (launchMode === 'upload' && attempt.metadataUrl !== input.metadataUrl))) return Response.json({ error: 'Saved launch identity cannot be changed. Resume with the original details.' }, { status: 409 });
+    const launchSummary = { ...input, walletAddress, coinMint, bondingCurve, quoteSymbol: pair.symbol, rewards: { creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, customSplit: recipients.length > 0 }, feeRecipients: recipients, socials };
+    if (attempt) {
+      const checked = await checkPublicLaunch(createClientFromRequest(req), rpcUrl, { requestId: input.requestId, walletAddress });
+      attempt = { ...attempt, ...checked.attempt };
+      if (attempt.status === 'confirmed') return Response.json({ ...publicAttempt(attempt), quoteSymbol: pair.symbol, alreadyLaunched: true });
+      if (attempt.status === 'pending') return Response.json({ error: 'This launch is still pending. Check it before requesting another approval.' }, { status: 409 });
+      const legacyCreateOnly = attempt.launchMode === 'normal' && !Number(attempt.firstBuyAmount);
+      if (!legacyCreateOnly && (attempt.quoteMint !== input.quoteMint || attempt.firstBuyAmount !== input.firstBuyAmount || (attempt.creatorFeeBps || 0) !== input.creatorFeeBps || Boolean(attempt.holderReward) !== input.holderReward || JSON.stringify(attempt.feeRecipients || []) !== JSON.stringify(recipients))) return Response.json({ error: 'Saved buy and reward settings cannot be changed.' }, { status: 409 });
+      if (legacyCreateOnly && attempt.status === 'prepared' && attempt.preparedTransaction) return Response.json({ error: 'The previous create-only approval is still valid. Wait for it to expire, then check and resume before approving a first buy.' }, { status: 409 });
+    }
+    const { uri, imageUrl: resolvedImageUrl } = await resolveLaunchSource(input, coinMint);
     // A resumed request whose coin already landed must never be relaunched.
     if (await isLaunched(rpcUrl, coinMint, bondingCurve)) {
       if (attempt) attempt = await attempts.update(attempt.id, { status: 'confirmed', checkedAt: new Date().toISOString() });
@@ -225,12 +230,12 @@ export default async function(req: Request): Promise<Response> {
     if (units !== 500000) encoded = build(units);
     const preparedTransaction = VersionedTransaction.deserialize(Buffer.from(encoded, 'base64'));
     const submitToken = await createSubmitToken(preparedTransaction.message.serialize());
-    const record = { requestId: input.requestId, walletAddress, inscribedMint: input.inscribedMint, coinMint, bondingCurve, name: input.name, symbol: input.symbol, quoteMint: input.quoteMint, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, socials, submitToken, signature: '', status: 'prepared', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
+    const record = { requestId: input.requestId, walletAddress, inscribedMint: input.inscribedMint, launchMode, metadataUrl: uri, imageUrl: resolvedImageUrl, description: input.description, coinMint, bondingCurve, name: input.name, symbol: input.symbol, quoteMint: input.quoteMint, firstBuyAmount: input.firstBuyAmount, creatorFeeBps: input.creatorFeeBps, holderReward: input.holderReward, feeRecipients: recipients, socials, submitToken, preparedTransaction: encoded, signature: '', status: 'prepared', lastValidBlockHeight: latest.lastValidBlockHeight, checkedAt: new Date().toISOString() };
     attempt = attempt ? await attempts.update(attempt.id, record) : await attempts.create(record);
     // Surface our RPC's view of the transaction so a Phantom-side simulation failure
     // can be compared against it instead of guessed at.
     const preflight = { ok: !simulation.err, error: simulation.err ? (typeof simulation.err === 'string' ? simulation.err : JSON.stringify(simulation.err)) : '', unitsConsumed: simulation.unitsConsumed || 0, logs: (simulation.logs || []).slice(-12) };
-    return Response.json({ ...launchSummary, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight, preflight });
+    return Response.json({ ...launchSummary, metadataUrl: uri, imageUrl: resolvedImageUrl, transaction: encoded, submitToken, attemptId: attempt.id, lastValidBlockHeight: latest.lastValidBlockHeight, preflight });
   } catch (error) {
     return Response.json({ error: error.message || 'Unable to prepare the public launch.' }, { status: 500 });
   }

@@ -60,7 +60,8 @@ export default async function(req: Request): Promise<Response> {
     const socials = asset !== 'json' ? {} : hasCoin || launchAttempt
       ? { website: storedSocials.website || '', twitter: storedSocials.twitter || '', github: storedSocials.github || '' }
       : { website: socialUrl('website'), twitter: socialUrl('twitter'), github: socialUrl('github') };
-    const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:${JSON.stringify(applied)}:media-v2`;
+    const launchText = launchAttempt?.launchMode === 'inscribed' && launchAttempt?.inscribedMint === mint ? { name: launchAttempt.name, symbol: launchAttempt.symbol, description: launchAttempt.description || '' } : {};
+    const cacheKey = `${mint}:${asset}:${coin}:${JSON.stringify(socials)}:${JSON.stringify(applied)}:${JSON.stringify(launchText)}:media-v3`;
     const hit = cached(cacheKey);
     if (hit) return hit;
     if (rateLimited(req)) return Response.json({ error: 'Too many requests. Try again in a minute.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -107,7 +108,7 @@ export default async function(req: Request): Promise<Response> {
     const servedImageMime = applied.imageUrl ? (applied.imageMime || fields.mediaMime) : fields.mediaMime;
     const mediaFields = mediaType === 'audio' ? { mediaType, mediaMime: 'audio/mpeg', animation_url: assetUri(mint, 'audio'), ...(hasCover || applied.imageUrl ? { image: servedImage } : {}), properties: { category: 'audio', files: [{ uri: assetUri(mint, 'audio'), type: 'audio/mpeg' }, ...(hasCover || applied.imageUrl ? [{ uri: servedImage, type: applied.imageUrl ? servedImageMime : (await inscribedCoverMime(rootAccount)) }] : [])] } } : { mediaType, mediaMime: servedImageMime, image: servedImage, properties: { category: 'image', files: [{ uri: servedImage, type: servedImageMime }] } };
     const textFields = Object.fromEntries(['name', 'symbol', 'description'].filter(key => applied[key]).map(key => [key, applied[key]]));
-    const body = JSON.stringify({ ...fields, ...textFields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
+    const body = JSON.stringify({ ...fields, ...launchText, ...textFields, ...socialFields, ...mediaFields, showName: true, createdOn: 'https://pump.fun' });
     // Audio preparation may initialize the cover after the audio association: do not cache incomplete artwork discovery.
     if (mediaType === 'audio') return new Response(body, { headers: { 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
     // The launch attempt is saved just after the prepare-time fetch of this URI, so a

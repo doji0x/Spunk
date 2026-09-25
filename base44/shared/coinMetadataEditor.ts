@@ -27,7 +27,7 @@ export async function loadCoinEditor(entities, coinMint) {
     if (!rootAccount || rootAccount.owner !== programAddress || rootAccount.executable || rootAccount.space > 65536 || !metadata || metadata.inscriptionAccount !== root || !tag) throw editorError('The original inscription could not be read. Try again later.', 422);
     const fields = await inscribedFields(rootAccount, root, tag === 'image');
     const hasImage = tag !== 'audio' || metadata.associatedInscriptions?.some(entry => entry.tag === 'cover');
-    original = { name: fields.name, symbol: fields.symbol, imageUrl: hasImage ? imageUri(row.inscribedMint) : '', imageMime: imageTypes.includes(fields.mediaMime) ? fields.mediaMime : 'image/png' };
+    original = { name: row.launchMode === 'inscribed' ? row.name : fields.name, symbol: row.launchMode === 'inscribed' ? row.symbol : fields.symbol, imageUrl: hasImage ? imageUri(row.inscribedMint) : '', imageMime: imageTypes.includes(fields.mediaMime) ? fields.mediaMime : 'image/png' };
     active = await activeOverride(entities, row.inscribedMint, coinMint);
   }
   const applied = overrideFields(active);

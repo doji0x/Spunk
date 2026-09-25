@@ -11,8 +11,7 @@ export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full
   const main = [
     { to: '/', label: 'Curated', icon: Home },
     { to: '/inscribe', label: 'Inscribe', icon: Plus },
-    { to: '/launch', label: 'Launch', icon: Rocket },
-    { to: '/launch-coin', label: 'Create a coin', icon: Rocket },
+    { to: '/launch-coin', label: 'Launch coin', icon: Rocket },
     { to: '/feed', label: 'Feed', icon: MessageSquare },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User }
   ];

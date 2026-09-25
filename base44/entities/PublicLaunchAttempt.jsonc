@@ -30,8 +30,11 @@
     "launchMode": {
       "type": "string",
       "enum": [
+        "upload",
+        "inscribed",
         "normal"
-      ]
+      ],
+      "description": "Image source. normal is retained only for pre-consolidation records."
     },
     "metadataUrl": {
       "type": "string"
