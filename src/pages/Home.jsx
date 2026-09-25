@@ -8,7 +8,6 @@ import ValidationExplainer from '@/components/ValidationExplainer';
 import CurationPreservation from '@/components/CurationPreservation';
 import ValidationAbout from '@/components/ValidationAbout';
 import InscriptionExamples from '@/components/InscriptionExamples';
-import SupportToken from '@/components/SupportToken';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
 import NormalLaunchHero from '@/components/launch/NormalLaunchHero';
@@ -89,7 +88,6 @@ export default function Home() {
         <a href="https://x.com/humanevolvd?s=11" target="_blank" rel="noreferrer" className="hover:text-primary">X</a>
         <span className="font-mono">ON-CHAIN CURATION</span>
       </nav>
-      <SupportToken />
     </footer>
     
     <ValidateBottomBar />
