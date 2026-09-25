@@ -9,7 +9,7 @@ export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full
   const [open, setOpen] = useState(false);
   const { address } = usePhantomWallet();
   const main = [
-    { to: '/', label: 'Punks', icon: Home },
+    { to: '/', label: 'Curated', icon: Home },
     { to: '/inscribe', label: 'Inscribe', icon: Plus },
     { to: '/launch', label: 'Launch', icon: Rocket },
     { to: '/launch-coin', label: 'Create a coin', icon: Rocket },

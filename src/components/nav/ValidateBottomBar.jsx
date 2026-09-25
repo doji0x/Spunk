@@ -8,7 +8,7 @@ export default function ValidateBottomBar() {
   const { pathname } = useLocation();
   const { address } = usePhantomWallet();
   const tabs = [
-    { to: '/', label: 'Punks', logo: true, active: pathname === '/' },
+    { to: '/', label: 'Curated', logo: true, active: pathname === '/' },
     { to: '/launch', label: 'Launch', icon: Rocket, active: pathname === '/launch' },
     { to: '/feed', label: 'Feed', icon: MessageSquare, active: pathname === '/feed' },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User, active: pathname.startsWith('/profile/') }
