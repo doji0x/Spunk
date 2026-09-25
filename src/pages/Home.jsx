@@ -48,6 +48,13 @@ export default function Home() {
         <NormalLaunchHero showLaunchLink />
       </div>
 
+      <section className="mt-6 rounded-3xl border border-primary/25 bg-card p-6 text-left sm:p-8" aria-labelledby="metadata-control-heading">
+        <p className="font-mono text-[10px] tracking-[0.18em] text-primary">CREATOR CONTROL</p>
+        <h2 id="metadata-control-heading" className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-3xl">Your metadata URI shapes how your coin is seen.</h2>
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">A metadata URI points platforms to a coin’s name, image, and links. For creators, the ability to change that URI—when the token allows it—or update the metadata it serves means you can fix mistakes, refresh your identity, and keep your community connected as your project grows.</p>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">Without that control, an outdated link or unavailable host can leave your coin showing the wrong information. Your original on-chain inscription stays unchanged; the way your project is presented can evolve where its update authority and platform rules permit.</p>
+      </section>
+
       <div className="mt-16"><PunksHero /></div>
       <CurationPreservation />
       <section className="mt-16 border-t border-primary/20 pt-14 sm:mt-20 sm:pt-16" aria-labelledby="verify-heading">
