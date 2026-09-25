@@ -18,10 +18,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [about, setAbout] = useState(false);
-  const [supportEnabled, setSupportEnabled] = useState(false); // Support toggle state
-
-  const toggleSupport = () => setSupportEnabled(!supportEnabled); // Toggle function
-
   const validate = async address => {
     setLoading(true); setResult(null);
 
@@ -54,11 +50,6 @@ export default function Home() {
 
       <div className="mt-16"><PunksHero /></div>
       <CurationPreservation />
-      <button onClick={toggleSupport} className="mt-6 mb-4 bg-primary text-white px-4 py-2 rounded">
-        {supportEnabled ? 'Disable Support' : 'Enable Support'}
-      </button>
-      {supportEnabled && <div className="rounded-md bg-secondary p-4 text-secondary-foreground">Support features are now enabled.</div>}
-
       <section className="mt-16 border-t border-primary/20 pt-14 sm:mt-20 sm:pt-16" aria-labelledby="verify-heading">
         <div className="mb-7">
           <p className="font-mono text-[9px] tracking-[0.18em] text-primary">PROVENANCE TOOL</p>
