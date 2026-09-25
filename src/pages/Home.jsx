@@ -11,7 +11,7 @@ import InscriptionExamples from '@/components/InscriptionExamples';
 import SupportToken from '@/components/SupportToken';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
-import AtomicV1Hero from '@/components/atomic/AtomicV1Hero';
+import NormalLaunchHero from '@/components/launch/NormalLaunchHero';
 import { Image } from '@/components/ui/image';
 import { Link } from 'react-router-dom';
 
@@ -50,7 +50,7 @@ export default function Home() {
     <ValidateHeader onLearn={() => setAbout(true)} />
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
       <div className="text-left">
-        <AtomicV1Hero showLaunchLink />
+        <NormalLaunchHero showLaunchLink />
       </div>
 
       <div className="mt-16"><PunksHero /></div>

@@ -12,7 +12,7 @@ export default function MobileMenuSheet({ triggerClassName = 'flex h-full w-full
     { to: '/', label: 'Punks', icon: Home },
     { to: '/inscribe', label: 'Inscribe', icon: Plus },
     { to: '/launch', label: 'Launch', icon: Rocket },
-    { to: '/atomic-v1', label: 'Atomic V1', icon: Rocket },
+    { to: '/atomic-v1', label: 'Create a coin', icon: Rocket },
     { to: '/feed', label: 'Feed', icon: MessageSquare },
     { to: address ? `/profile/${address}` : '/feed', label: 'Profile', icon: User }
   ];

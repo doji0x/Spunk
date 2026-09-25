@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
@@ -11,7 +11,7 @@ import Home from '@/pages/Home';
 import AdminMint from '@/pages/AdminMint';
 import AdminMints from '@/pages/AdminMints';
 import AdminAstra from '@/pages/AdminAstra';
-import AdminAtomicV1Launch from '@/pages/AdminAtomicV1Launch';
+
 import AdminLaunchLinks from '@/pages/AdminLaunchLinks';
 import AdminMetadataOverride from '@/pages/AdminMetadataOverride';
 import Login from '@/pages/Login';
@@ -22,12 +22,12 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import PublicLaunch from '@/pages/PublicLaunch';
 import PublicInscribe from '@/pages/PublicInscribe';
 import PublicAtomicV1Launch from '@/pages/PublicAtomicV1Launch';
-import AtomicV1History from '@/pages/AtomicV1History';
+
 import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
 import ProofOfFart from '@/pages/ProofOfFart';
 import PhantomWalletProvider from '@/contexts/PhantomWalletContext';
-import AtomicV1WalletProvider from '@/contexts/AtomicV1WalletContext';
+
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -58,10 +58,7 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<Home />} />
       <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/inscribe" element={<PublicInscribe />} />
-      <Route element={<AtomicV1WalletProvider><Outlet /></AtomicV1WalletProvider>}>
-        <Route path="/atomic-v1" element={<PublicAtomicV1Launch />} />
-        <Route path="/atomic-v1/history" element={<AtomicV1History />} />
-      </Route>
+      <Route path="/atomic-v1" element={<PublicAtomicV1Launch />} />
       <Route path="/feed" element={<Feed />} />
       <Route path="/profile/:wallet" element={<SocialProfile />} />
       <Route path="/proof-of-fart" element={<ProofOfFart />} />
@@ -80,9 +77,7 @@ const AuthenticatedApp = () => {
       </Route>
       <Route path="/admin/astra/jobs" element={<Navigate to="/admin/astra" replace />} />
       <Route path="/admin/astra/history" element={<Navigate to="/admin/astra" replace />} />
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Fatomic-v1" replace />} />}>
-        <Route path="/admin/atomic-v1" element={<AdminAtomicV1Launch />} />
-      </Route>
+
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login?returnTo=%2Fadmin%2Flinks" replace />} />}>
         <Route path="/admin/links" element={<AdminLaunchLinks />} />
       </Route>

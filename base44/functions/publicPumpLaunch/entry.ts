@@ -14,6 +14,7 @@ import { isLaunched, metadataUri, imageUri } from '../../shared/pumpLaunch.ts';
 import { checkMetadataProxy } from '../../shared/pumpLaunchValidation.ts';
 import { parseRecipients } from '../../shared/pumpRewards.ts';
 import { supportedPairOptions, resolveSupportedPair, tokenBalance } from '../../shared/pumpPairs.ts';
+import { prepareNormalLaunch, checkNormalLaunch, normalPublicAttempt } from '../../shared/normalPumpLaunch.ts';
 
 const addressPattern = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
@@ -54,6 +55,8 @@ export default async function(req: Request): Promise<Response> {
     if (body.network !== 'mainnet-beta') return Response.json({ error: 'pump.fun launches are available on mainnet only. Switch the network to Mainnet.' }, { status: 400 });
     const rpcUrl = secrets.get('SOLANA_RPC_URL');
     await assertMainnet(rpcUrl);
+    if (body.action === 'checkNormal') return Response.json(await checkNormalLaunch(createClientFromRequest(req), rpcUrl, body));
+    if (body.action === 'prepare' && body.launchMode === 'normal') return Response.json(await prepareNormalLaunch(createClientFromRequest(req), rpcUrl, body, createSubmitToken));
     if (body.action === 'options') {
       const onlineSdk = new OnlinePumpSdk(new Connection(rpcUrl, 'confirmed'));
       const global = await onlineSdk.fetchGlobal();
@@ -89,7 +92,9 @@ export default async function(req: Request): Promise<Response> {
       const walletAddress = String(body.walletAddress || '').trim();
       if (!addressPattern.test(walletAddress)) return Response.json({ error: 'Invalid wallet address.' }, { status: 400 });
       const records = await createClientFromRequest(req).asServiceRole.entities.PublicLaunchAttempt.filter({ walletAddress }, '-created_date', 20);
-      return Response.json({ attempts: records.filter(item => ['prepared', 'pending'].includes(item.status)).map(({ submitToken, ...rest }) => rest) });
+      return Response.json({ attempts: records.filter(item => body.launchMode === 'normal'
+        ? item.launchMode === 'normal' && item.status !== 'confirmed'
+        : item.launchMode !== 'normal' && ['prepared', 'pending'].includes(item.status)).map(normalPublicAttempt) });
     }
     if (body.action === 'confirmSharing') {
       const signature = String(body.signature || '');

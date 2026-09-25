@@ -4,11 +4,10 @@
   "properties": {
     "requestId": {
       "type": "string",
-      "description": "Client UUID; the coin mint keypair is derived from it."
+      "description": "Stable client UUID; the mint key is retained in the browser."
     },
     "walletAddress": {
-      "type": "string",
-      "description": "Phantom wallet that owns this launch."
+      "type": "string"
     },
     "inscribedMint": {
       "type": "string"
@@ -23,6 +22,24 @@
       "type": "string"
     },
     "symbol": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "launchMode": {
+      "type": "string",
+      "enum": [
+        "normal"
+      ]
+    },
+    "metadataUrl": {
+      "type": "string"
+    },
+    "imageUrl": {
+      "type": "string"
+    },
+    "preparedTransaction": {
       "type": "string"
     },
     "quoteMint": {
@@ -106,7 +123,6 @@
   "required": [
     "requestId",
     "walletAddress",
-    "inscribedMint",
     "coinMint",
     "bondingCurve",
     "status"
