@@ -17,6 +17,6 @@ export default function AtomicV1Hero({ enabled = true, showLaunchLink = false })
       <h3 className="mt-3 font-display text-sm font-semibold">{point.title}</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{point.copy}</p>
     </div>; })}</div>
     <p className="mt-6 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs leading-5 text-muted-foreground">{enabled ? 'Use the native Phantom request to ask the wallet to approve the V1 transaction. Its installed build determines format support.' : 'New launches are disabled by the operator. Existing launch history and recovery remain available.'}</p>
-    {showLaunchLink && <Link to="/atomic-v1" className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"><Zap className="h-4 w-4" />Launch with V1</Link>}
+    {showLaunchLink && <Link to="/launch-coin" className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"><Zap className="h-4 w-4" />Launch with V1</Link>}
   </section>;
 }
