@@ -63,6 +63,10 @@
     "adminEmail": {
       "type": "string",
       "description": "Admin who made this change."
+    },
+    "actorWallet": {
+      "type": "string",
+      "description": "Verified launching wallet that signed a self-serve update."
     }
   },
   "required": [

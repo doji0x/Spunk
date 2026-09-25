@@ -22,6 +22,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import PublicLaunch from '@/pages/PublicLaunch';
 import PublicInscribe from '@/pages/PublicInscribe';
 import LaunchCoin from '@/pages/LaunchCoin';
+import EditCoin from '@/pages/EditCoin';
 
 import Feed from '@/pages/Feed';
 import SocialProfile from '@/pages/SocialProfile';
@@ -59,6 +60,7 @@ const AuthenticatedApp = () => {
       <Route path="/launch" element={<PublicLaunch />} />
       <Route path="/inscribe" element={<PublicInscribe />} />
       <Route path="/launch-coin" element={<LaunchCoin />} />
+      <Route path="/edit-coin" element={<EditCoin />} />
       <Route path="/atomic-v1" element={<Navigate to="/launch-coin" replace />} />
       <Route path="/feed" element={<Feed />} />
       <Route path="/profile/:wallet" element={<SocialProfile />} />

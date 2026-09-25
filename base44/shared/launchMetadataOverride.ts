@@ -29,11 +29,12 @@ export function overrideFields(record) {
 
 export async function activeOverride(entities, inscribedMint, coinMint) {
   if (coinMint) {
-    const [byCoin] = await entities.LaunchMetadataOverride.filter({ coinMint, isActive: true });
+    const [byCoin] = await entities.LaunchMetadataOverride.filter({ coinMint, isActive: true }, '-created_date', 1);
     if (byCoin) return byCoin;
   }
   if (!inscribedMint) return null;
-  const [byMint] = await entities.LaunchMetadataOverride.filter({ inscribedMint, isActive: true });
+  // Creator edits are coin-specific; never inherit another coin creator's override.
+  const [byMint] = await entities.LaunchMetadataOverride.filter({ inscribedMint, isActive: true, $or: [{ actorWallet: { $exists: false } }, { actorWallet: '' }] });
   return byMint || null;
 }
 
