@@ -13,7 +13,6 @@ import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
 import NormalLaunchHero from '@/components/launch/NormalLaunchHero';
 import { Image } from '@/components/ui/image';
-import { Link } from 'react-router-dom';
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -60,13 +59,6 @@ export default function Home() {
       </button>
       {supportEnabled && <div className="rounded-md bg-secondary p-4 text-secondary-foreground">Support features are now enabled.</div>}
 
-      <section className="mt-16 rounded-3xl border border-primary/25 bg-card p-7 text-left sm:p-9" aria-labelledby="proof-of-fart-heading">
-        <p className="font-mono text-[9px] tracking-[0.18em] text-primary">ON-CHAIN AUDIO EXPERIMENT</p>
-        <h2 id="proof-of-fart-heading" className="mt-3 font-display text-2xl font-bold tracking-tight">Proof of Fart</h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">See how a Fly Brain agent inscribes an MP3 fart directly onto Solana, then verify the audio bytes yourself.</p>
-        <Link to="/proof-of-fart" className="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90">Explore Proof of Fart <ArrowUpRight size={14} /></Link>
-      </section>
-      
       <section className="mt-16 border-t border-primary/20 pt-14 sm:mt-20 sm:pt-16" aria-labelledby="verify-heading">
         <div className="mb-7">
           <p className="font-mono text-[9px] tracking-[0.18em] text-primary">PROVENANCE TOOL</p>
