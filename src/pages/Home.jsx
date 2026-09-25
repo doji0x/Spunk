@@ -11,6 +11,7 @@ import InscriptionExamples from '@/components/InscriptionExamples';
 import ValidateBottomBar from '@/components/nav/ValidateBottomBar';
 import PunksHero from '@/components/punks/PunksHero';
 import NormalLaunchHero from '@/components/launch/NormalLaunchHero';
+import ContractAddress from '@/components/ContractAddress';
 import { Image } from '@/components/ui/image';
 
 export default function Home() {
@@ -45,9 +46,10 @@ export default function Home() {
     <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-20 pt-14 text-center sm:pt-20">
       <div className="text-left">
         <NormalLaunchHero showLaunchLink />
-      </div>
-
-      <section className="mt-6 rounded-3xl border border-primary/25 bg-card p-6 text-left sm:p-8" aria-labelledby="metadata-control-heading">
+        </div>
+        <ContractAddress />
+        
+        <section className="mt-6 rounded-3xl border border-primary/25 bg-card p-6 text-left sm:p-8" aria-labelledby="metadata-control-heading">
         <p className="font-mono text-[10px] tracking-[0.18em] text-primary">CREATOR CONTROL</p>
         <h2 id="metadata-control-heading" className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-3xl">Your metadata URI shapes how your coin is seen.</h2>
         <p className="mt-4 text-sm leading-6 text-muted-foreground">A metadata URI points platforms to a coin’s name, image, and links. For creators, the ability to change that URI—when the token allows it—or update the metadata it serves means you can fix mistakes, refresh your identity, and keep your community connected as your project grows.</p>
